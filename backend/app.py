@@ -1,56 +1,77 @@
 from fastapi import FastAPI
-from database import engine
-import model 
-from model import Employee, Skill, EmployeeSkill
+from fastapi.middleware.cors import CORSMiddleware
 
+# database engine
+from backend.database import engine
+
+# models
+from backend import model
+
+# router import
+from backend.all_api import router
+
+# seed database
+from backend.seed import seed_database
+
+# ML libraries
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+
+# create database tables
 model.Base.metadata.create_all(bind=engine)
 
+# seed database with sample data
+try:
+    seed_database()
+except Exception as e:
+    print(f"Database seeding skipped: {e}")
+
+
+# FastAPI app
 app = FastAPI()
 
+# CORS - allow frontend to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# include routes
+app.include_router(router)
+
+
+# root endpoint
 @app.get("/")
 def root():
     return {
-    "status": "success",
-    "server": "running",
-    "database": "connected"
-}
+        "status": "success",
+        "server": "running",
+        "database": "connected"
+    }
 
 
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from fastapi import Depends
-from database import SessionLocal
+# ==========================
+# ML Forecast API
+# ==========================
 
-#db dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        
-#schema for employee data
-class EmployeeCreate(BaseModel):
-    name: str
-    department: str
-    role: str
-    year_exp: int
+@app.get("/forecast/{skill_name}")
+def forecast_skill_demand(skill_name: str):
 
-#create employee api
-@app.post("/employees")
-def add_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
-    new_emp = Employee(
-        name=employee.name,
-        department=employee.department,
-        role=employee.role,
-        year_exp=employee.year_exp #year of experience
-    )
-    db.add(new_emp)
-    db.commit()
-    db.refresh(new_emp)
-    return new_emp
+    # dummy historical hiring data
+    months = np.array([1, 2, 3, 4, 5]).reshape(-1, 1)
+    demand = np.array([2, 3, 4, 5, 6])
 
-@app.get("/employees")
-def get_all_employees(db: Session = Depends(get_db)):
-    employees = db.query(Employee).all()
-    return employees
+    model_lr = LinearRegression()
+    model_lr.fit(months, demand)
+
+    next_month = np.array([[6]])
+    prediction = model_lr.predict(next_month)
+
+    return {
+        "skill": skill_name,
+        "predicted_demand_next_month": int(prediction[0])
+    }

@@ -12,6 +12,7 @@ cloudpathlib==0.23.0
 colorama==0.4.6
 confection==0.1.5
 cymem==2.0.13
+Faker==40.8.0
 fastapi==0.135.1
 Flask==3.1.2
 Flask-SQLAlchemy==3.1.1
