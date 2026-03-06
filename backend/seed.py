@@ -7,7 +7,7 @@ def seed_database():
     
     # Check if data already exists
     if db.query(Employee).first() is not None:
-        print("✅ Database already seeded. Skipping...")
+        print("Database already seeded. Skipping...")
         db.close()
         return
     

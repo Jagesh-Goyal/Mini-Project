@@ -27,3 +27,5 @@ class EmployeeSkill(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"))
     skill_id = Column(Integer, ForeignKey("skills.id"))
     proficiency_level = Column(Integer)
+
+    
