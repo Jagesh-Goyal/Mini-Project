@@ -173,7 +173,7 @@ export default function Dashboard() {
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
-                    label={({ level_name, count }) => `${level_name}: ${count}`}
+                    label={({ name, value }) => `${String(name)}: ${String(value)}`}
                   >
                     {proficiencyData.map((_, i) => (
                       <Cell key={i} fill={pieColors[i % pieColors.length]} />

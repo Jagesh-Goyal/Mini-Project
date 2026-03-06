@@ -50,27 +50,6 @@ def get_all_employees(db: Session = Depends(get_db)):
 # Skill APIs
 # =============================
 
-@router.post("/skills")
-def add_skill(skill: SkillCreate, db: Session = Depends(get_db)):
-
-    new_skill = Skill(
-        skill_name=skill.skill_name,
-        category=skill.category
-    )
-
-    db.add(new_skill)
-    db.commit()
-    db.refresh(new_skill)
-
-    return {
-        "message": "Skill added successfully",
-        "data": {
-            "id": new_skill.id,
-            "skill_name": new_skill.skill_name
-        }
-    }
-
-
 @router.get("/skills")
 def get_all_skills(db: Session = Depends(get_db)):
     return db.query(Skill).all()
