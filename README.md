@@ -368,23 +368,5 @@ Mini-Project/
 - **Low accuracy:** Generate more training data in `ml_model.py`
 - **Missing models:** Check `backend/models/` directory exists
 
-## 📄 License
-
-This project is created for educational and demonstration purposes.
-
-## 👨‍💻 Developer
-
-Built with ❤️ using FastAPI, React, and Machine Learning
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome!
-
-## 📞 Support
-
-For questions or support, please create an issue in the repository.
-
----
-
 **Made in 2026** | Powered by AI & ML 🚀
->>>>>>> 5afef37 (initial comit)
+Jagesh goyal, Jagriti gupta, dev Aggarwal
