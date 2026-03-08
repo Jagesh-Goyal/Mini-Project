@@ -4,8 +4,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.all_api import get_db, router
+from backend.all_api import get_db, router, hash_password
 from backend.database import Base
+from backend.model import User
 
 
 @pytest.fixture()
@@ -20,6 +21,18 @@ def client(tmp_path):
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
     Base.metadata.create_all(bind=engine)
+
+    # Create default admin user for testing
+    TestingSessionLocal_setup = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    db_setup = TestingSessionLocal_setup()
+    admin_user = User(
+        name="Admin User",
+        email="admin@dakshtra.com",
+        password_hash=hash_password("admin123"),
+    )
+    db_setup.add(admin_user)
+    db_setup.commit()
+    db_setup.close()
 
     app = FastAPI()
     app.include_router(router)
