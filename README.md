@@ -1,372 +1,222 @@
-<<<<<<< HEAD
-# Mini-Project
+# AI-Based Workforce Planning & Skill Gap Intelligence Platform
 
-Employees
-     ↓
-Skills
-     ↓
-Employee-Skill Mapping
-     ↓
-Skill Distribution
-     ↓
-Skill Gap Analysis
-     ↓
-Recommendation Engine
-     ↓
-ML Forecast
-=======
-# 🚀 Dakshtra AI Workforce Platform
+Dakshtra is a full-stack project that helps teams understand current skills, identify upcoming gaps, and take better hiring or upskilling decisions.
 
-> An intelligent workforce skill management and demand forecasting system powered by Machine Learning
+The app is built with FastAPI (backend) and React + TypeScript (frontend), and now includes JWT-based authentication, automated tests, and CI/CD checks.
 
-## 📋 Overview
+## 1. Introduction
 
-Dakshtra is a comprehensive AI-powered platform for managing employee skills, identifying skill gaps, and predicting future skill demands using advanced machine learning algorithms. The platform helps organizations make data-driven decisions about workforce training and hiring needs.
+Organizations often struggle to align workforce capability with changing business goals. Decisions become reactive because there is no single view of current skills and future demand.
 
-## ✨ Key Features
+This project provides an AI-supported workforce intelligence workflow where skill data is captured, analyzed, and converted into actionable recommendations.
 
-### 📊 Analytics & Visualization
-- **Real-time Dashboard** with key metrics (employees, skills, coverage, critical gaps)
-- **Skill Distribution Analysis** - Visual breakdown of skills across the workforce
-- **Proficiency Level Distribution** - Track skill maturity levels (Beginner to Expert)
-- **Experience Distribution** - Employee categorization by years of experience
-- **Skill Category Breakdown** - Analysis by skill categories (Programming, Cloud, AI, etc.)
-- **Department-wise Analytics** - Skill distribution across different departments
+## 2. Problem Statement
 
-### 🤖 Machine Learning Models
-- **Demand Forecasting Model** - Random Forest Regressor for multi-month skill demand prediction
-- **Turnover Prediction Model** - Gradient Boosting Classifier for employee attrition risk
-- **Real-time Dataset Generation** - Synthetic historical data generation for training
-- **Feature Importance Analysis** - Understand what drives skill demand
+- No real-time visibility of workforce skills.
+- Hiring decisions are mostly reactive.
+- Training plans are generic, not data-driven.
+- Workforce planning is hard to justify with evidence.
 
-### 📈 Forecasting Capabilities
-- **Multi-month Predictions** - Forecast skill demand for 3, 6, or 12 months ahead
-- **Department-specific Forecasting** - Tailored predictions per department
-- **Supply vs Demand Analysis** - Visualize skill gaps over time
-- **Simple & Advanced Modes** - Choose between linear regression or ML-powered forecasts
+## 3. Proposed Solution
 
-### 🎯 Skill Gap Analysis
-- **Current vs Required** skill analysis
-- **Gap Identification** - Detect critical skill shortages
-- **Actionable Recommendations** - AI-driven hiring/training suggestions
-- **Proficiency Tracking** - Monitor skill levels (1-5 scale)
+The system:
+- Ingests employee and skill data.
+- Builds organization-level skill visibility.
+- Provides demand forecast and gap analysis endpoints.
+- Recommends upskilling or hiring actions.
+- Exposes this through a web dashboard.
 
-### 👥 Employee Management
-- **Employee Registration** - Add employees with department, role, experience
-- **Skill Assignment** - Map skills to employees with proficiency levels
-- **Employee Skill Profiles** - View individual skill portfolios
-- **Bulk Data Seeding** - Quick setup with 150+ sample employees
+## 4. Key Objectives
 
-## 🛠️ Tech Stack
+- Anticipate upcoming workforce needs.
+- Reduce hiring risk.
+- Optimize training investment.
+- Support strategic workforce planning with data.
 
-### Backend
-- **Framework:** FastAPI (Python 3.10+)
-- **Database:** SQLAlchemy ORM with SQLite
-- **ML Libraries:** 
-  - scikit-learn (Random Forest, Gradient Boosting)
-  - NumPy, Pandas
-  - joblib (Model persistence)
-- **Data Generation:** Faker (Indian names and data)
-- **Server:** Uvicorn (ASGI)
+## 5. Key Features
 
-### Frontend
-- **Framework:** React 18 with TypeScript
-- **Build Tool:** Vite
-- **UI Libraries:**
-  - TailwindCSS (Styling)
-  - Framer Motion (Animations)
-  - Recharts (Data Visualization)
-  - Lucide React (Icons)
-- **State Management:** Zustand
-- **HTTP Client:** Axios
-- **Notifications:** React Hot Toast
+- Employee and skill management.
+- Skill assignment with proficiency levels.
+- Skill distribution analytics.
+- Proficiency, category, and experience analytics.
+- Skill gap analysis and recommendation engine.
+- Basic forecast endpoint for future demand.
+- JWT authentication for protected business APIs.
 
-## 📁 Project Structure
+## 6. End-to-End Flow
 
-```
+`Employee Data -> Skill Mapping -> Analytics -> Gap Analysis -> Recommendation -> Dashboard`
+
+## 7. Current Implementation Scope
+
+Implemented now:
+- FastAPI + SQLAlchemy + SQLite backend.
+- React + TypeScript + Zustand frontend.
+- Login with JWT (`/auth/login`) and token validation (`/auth/me`).
+- Protected API routes (employees, skills, analytics, gap/recommendation).
+- Automated tests for backend routes and frontend store actions.
+
+Planned/extendable:
+- Advanced NLP skill extraction.
+- Scenario-based forecasting.
+- Personalized learning path generation.
+
+## 8. Tech Stack
+
+Backend:
+- FastAPI
+- SQLAlchemy
+- SQLite
+- NumPy + scikit-learn
+- python-jose (JWT)
+- pytest
+
+Frontend:
+- React + TypeScript
+- Vite
+- Zustand
+- Axios
+- Recharts
+- Tailwind CSS
+- Vitest
+
+## 9. Project Structure
+
+```text
 Mini-Project/
-├── backend/
-│   ├── __init__.py
-│   ├── app.py                    # FastAPI application entry point
-│   ├── all_api.py                # All API endpoints
-│   ├── database.py               # Database configuration
-│   ├── model.py                  # SQLAlchemy models
-│   ├── schemas.py                # Pydantic schemas
-│   ├── ml_model.py               # ML models & forecasting logic
-│   ├── seed.py                   # Basic data seeding
-│   └── seed_advance.py           # Advanced data seeding (150 employees)
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── layout/           # Layout components
-│   │   │   └── ui/               # Reusable UI components
-│   │   ├── pages/
-│   │   │   ├── Dashboard.tsx     # Main dashboard with analytics
-│   │   │   ├── Employees.tsx     # Employee management
-│   │   │   ├── Skills.tsx        # Skill management
-│   │   │   ├── Forecast.tsx      # ML-powered forecasting
-│   │   │   ├── SkillGap.tsx      # Gap analysis
-│   │   │   └── Recommendations.tsx # AI recommendations
-│   │   ├── lib/
-│   │   │   ├── api.ts            # API client functions
-│   │   │   └── utils.ts          # Utility functions
-│   │   ├── store/
-│   │   │   └── useStore.ts       # Zustand state management
-│   │   ├── types/
-│   │   │   └── index.ts          # TypeScript type definitions
-│   │   ├── App.tsx               # Root component
-│   │   └── main.tsx              # Application entry point
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.ts
-│
-├── requirements.txt              # Python dependencies
-├── .gitignore
-└── README.md
+|-- backend/
+|   |-- app.py
+|   |-- all_api.py
+|   |-- database.py
+|   |-- model.py
+|   |-- schemas.py
+|   |-- seed.py
+|   `-- tests/
+|       |-- conftest.py
+|       `-- test_api_routes.py
+|-- frontend/
+|   |-- src/
+|   |   `-- store/useStore.test.ts
+|   |-- package.json
+|   |-- vite.config.ts
+|   `-- vitest.config.ts
+|-- .github/workflows/ci.yml
+|-- requirements.txt
+`-- README.md
 ```
 
-## 🚀 Installation & Setup
+## 10. Run Locally
 
-### Prerequisites
-- Python 3.10 or higher
-- Node.js 18 or higher
-- npm or yarn
+Prerequisites:
+- Python 3.11+
+- Node.js 18+
 
-### Backend Setup
+Backend setup (from project root):
 
-1. **Navigate to project directory:**
-   ```bash
-   cd Mini-Project
-   ```
+```powershell
+python -m venv env
+.\env\Scripts\Activate.ps1
+pip install -r requirements.txt
+.\env\Scripts\python.exe -m uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
+```
 
-2. **Create and activate virtual environment:**
-   ```bash
-   # Create virtual environment
-   python -m venv env
+Frontend setup (new terminal):
 
-   # Activate (Windows)
-   .\env\Scripts\Activate.ps1
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
-   # Activate (Linux/Mac)
-   source env/bin/activate
-   ```
+URLs:
+- Backend: `http://127.0.0.1:8000/`
+- API docs: `http://127.0.0.1:8000/docs`
+- Frontend: `http://localhost:5173/`
 
-3. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+## 11. Authentication
 
-4. **Seed database with sample data:**
-   ```bash
-   # Advanced seeding (150 employees, 17 skills, imbalanced assignments)
-   python -m backend.seed_advance
+JWT auth endpoints:
+- `POST /auth/login`
+- `GET /auth/me`
 
-   # OR basic seeding (fewer records)
-   python -m backend.seed
-   ```
+Demo credentials:
+- Email: `admin@dakshtra.com`
+- Password: `admin123`
 
-5. **Start the backend server:**
-   ```bash
-   # From project root
-   uvicorn backend.app:app --reload --port 8000
-   ```
-   Backend will run at: `http://127.0.0.1:8000`
+After login, frontend stores the bearer token and sends it with protected API requests.
 
-### Frontend Setup
+## 12. Main API Endpoints
 
-1. **Navigate to frontend directory:**
-   ```bash
-   cd frontend
-   ```
+Protected business endpoints:
+- `POST /employees`
+- `GET /employees`
+- `GET /employee-skills/{employee_id}`
+- `POST /skills`
+- `GET /skills`
+- `POST /assign-skill`
+- `GET /skill-distribution`
+- `POST /skill-gap`
+- `GET /recommendation/{skill_name}?required_count=<int>`
+- `GET /analytics/proficiency-distribution`
+- `GET /analytics/skill-categories`
+- `GET /analytics/experience-distribution`
 
-2. **Install Node dependencies:**
-   ```bash
-   npm install
-   # or
-   yarn install
-   ```
+Forecast endpoint:
+- `GET /forecast/{skill_name}`
 
-3. **Start development server:**
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   ```
-   Frontend will run at: `http://localhost:5173`
+## 13. Testing
 
-## 📡 API Endpoints
+Backend route tests:
 
-### Employee Management
-- `POST /employees` - Add new employee
-- `GET /employees` - Get all employees
-- `GET /employee-skills/{employee_id}` - Get employee skill profile
+```powershell
+.\env\Scripts\python.exe -m pytest backend/tests -q
+```
 
-### Skill Management
-- `POST /skills` - Add new skill
-- `GET /skills` - Get all skills
-- `POST /assign-skill` - Assign skill to employee with proficiency level
+Frontend store tests:
 
-### Analytics
-- `GET /skill-distribution` - Get skill distribution across workforce
-- `GET /analytics/department-skills` - Department-wise skill breakdown
-- `GET /analytics/proficiency-distribution` - Proficiency level distribution
-- `GET /analytics/skill-categories` - Category-wise skill data
-- `GET /analytics/experience-distribution` - Experience level distribution
+```powershell
+cd frontend
+npm run test
+```
 
-### Skill Gap Analysis
-- `POST /skill-gap` - Calculate skill gap (required vs current)
-- `GET /recommendation/{skill_name}` - Get AI recommendations
+Frontend production build check:
 
-### Machine Learning
-- `POST /ml/train` - Train ML models with real-time generated data
-- `GET /ml/forecast/{skill_name}` - Multi-month demand forecast
-  - Query params: `department`, `months_ahead` (3/6/12)
-- `GET /ml/feature-importance` - Get ML model feature importance
+```powershell
+cd frontend
+npm run build
+```
 
-### Legacy Forecast
-- `GET /forecast/{skill_name}` - Simple linear regression forecast
+## 14. CI/CD Practices
 
-## 🎯 Usage Guide
+This project follows CI/CD practices using GitHub Actions.
 
-### 1. Initial Setup
-1. Start both backend and frontend servers
-2. Access the app at `http://localhost:5173`
-3. The database will be pre-populated with 150 employees and 17 skills
+Workflow file:
+- `.github/workflows/ci.yml`
 
-### 2. Train ML Models
-1. Go to **Dashboard**
-2. Click **"Train Models"** button in the ML Training section
-3. Wait for training to complete (~5-10 seconds)
-4. View model metrics:
-   - Demand Model R² Score
-   - Turnover Prediction Accuracy
-   - Training Records Count
+On every push and pull request to `main`, pipeline runs:
+- Backend dependency install + backend API tests (`pytest`).
+- Frontend dependency install + frontend tests (`vitest`).
+- Frontend production build (`npm run build`).
 
-### 3. Add Employees & Skills
-1. Navigate to **Employees** page
-2. Fill in employee details (name, department, role, experience)
-3. Navigate to **Skills** page to add new skills
-4. Assign skills to employees with proficiency levels (1-5)
+This helps catch regressions early and keeps `main` deploy-ready.
 
-### 4. Analyze Skill Gaps
-1. Go to **Skill Gap** page
-2. Select a skill
-3. Enter required employee count
-4. View current count, gap, and actionable recommendations
+## 15. Team
 
-### 5. Forecast Future Demand
-1. Navigate to **Forecast** page
-2. Choose between:
-   - **ML Forecast (Advanced)** - Random Forest predictions
-   - **Simple Forecast** - Linear regression
-3. Enter skill name and select department
-4. Choose forecast period (3/6/12 months)
-5. Click **"Generate Forecast"**
-6. Analyze demand, supply, and gap trends
+- **Jagesh Goyal** - Backend Developer
+  - Built FastAPI services and business endpoints.
+  - Set up ORM models and core analytics APIs.
 
-### 6. View Analytics
-- **Dashboard** - Overview metrics and charts
-- **Employees** - Employee list with filtering
-- **Skills** - Skill inventory
-- **Recommendations** - AI-driven hiring/training suggestions
+- **Dev** - Backend Developer
+  - Implemented API route logic and skill gap flows.
+  - Worked on database seeding and backend test setup.
 
-## 🤖 Machine Learning Details
+- **Jagriti Gupta** - Frontend Developer
+  - Built React pages and layout components.
+  - Implemented dashboard visuals and UI interactions.
 
-### Demand Forecasting Model
-- **Algorithm:** Random Forest Regressor
-- **Features:** 
-  - Month, Quarter, Year
-  - Skill (encoded)
-  - Department (encoded)
-  - Current Supply
-  - Trend Score
-- **Training Data:** 24 months of synthetic historical data
-- **Output:** Predicted skill demand for future months
+## 16. Next Improvements
 
-### Turnover Prediction Model
-- **Algorithm:** Gradient Boosting Classifier
-- **Features:**
-  - Years of experience
-  - Skill count
-  - Average proficiency
-  - Department
-- **Output:** Binary turnover risk (0 = Low, 1 = High)
-
-### Data Generation Strategy
-- **Trending Skills:** AI, ML, Kubernetes, Cloud (50% growth simulation)
-- **Seasonal Patterns:** Higher hiring in Q1 and Q3
-- **Department Correlations:** Skill-department affinity modeling
-- **Realistic Noise:** Gaussian noise for natural variation
-
-## 📊 Sample Skills Included
-
-### Programming
-- Python, SQL
-
-### Cloud
-- AWS, Azure
-
-### DevOps
-- Docker, Kubernetes
-
-### AI/ML
-- Machine Learning, Artificial Intelligence, Prompt Engineering
-
-### Security
-- Cybersecurity, Cloud Security
-
-### Analytics
-- Power BI, Tableau, Data Analysis
-
-### Frontend
-- React
-
-### Soft Skills
-- Leadership, Communication
-
-## 🎨 UI Features
-
-- **Dark Mode Design** - Modern glassmorphism UI
-- **Smooth Animations** - Framer Motion transitions
-- **Responsive Layout** - Works on desktop, tablet, mobile
-- **Interactive Charts** - Bar, Pie, Line, Area charts
-- **Real-time Updates** - Instant data refresh
-- **Loading States** - Skeleton screens and spinners
-- **Toast Notifications** - User feedback for actions
-
-## 🔮 Future Enhancements
-
-- [ ] User authentication and role-based access
-- [ ] CSV/Excel data import/export
-- [ ] Advanced filtering and search
-- [ ] Email notifications for critical gaps
-- [ ] Integration with HR systems
-- [ ] Deep learning models (LSTM for time series)
-- [ ] Multi-tenant support
-- [ ] Performance optimization for large datasets
-- [ ] Real-time collaboration features
-- [ ] Mobile app (React Native)
-
-## 🐛 Troubleshooting
-
-### Backend Issues
-- **Port already in use:** Change port in uvicorn command
-  ```bash
-  uvicorn backend.app:app --reload --port 8001
-  ```
-- **Module not found:** Ensure virtual environment is activated
-- **Database errors:** Delete `*.db` files and re-run seeding
-
-### Frontend Issues
-- **API connection failed:** Verify backend is running on port 8000
-- **Dependency errors:** Delete `node_modules` and run `npm install` again
-- **Build errors:** Clear cache: `npm run build --force`
-
-### ML Model Issues
-- **"Please train model first" error:** Click "Train Models" on Dashboard
-- **Low accuracy:** Generate more training data in `ml_model.py`
-- **Missing models:** Check `backend/models/` directory exists
-
-**Made in 2026** | Powered by AI & ML 🚀
-Jagesh goyal, Jagriti gupta, dev Aggarwal
+- Add refresh token flow and role-based authorization.
+- Add API integration tests for negative/edge cases.
+- Add pagination and filtering for large employee/skill datasets.
+- Add Alembic migrations for schema versioning.

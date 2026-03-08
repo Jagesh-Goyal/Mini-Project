@@ -1,36 +1,64 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { login as loginApi } from '@/lib/api';
+
+interface FormErrors {
+  email?: string;
+  password?: string;
+  form?: string;
+}
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const validate = () => {
+    const nextErrors: FormErrors = {};
+
+    if (!EMAIL_REGEX.test(email.trim())) {
+      nextErrors.email = 'Please enter a valid email address';
+    }
+
+    if (password.length < 8) {
+      nextErrors.password = 'Password must be at least 8 characters';
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email || !password) {
-      toast.error('Please fill in all fields');
+    if (!validate()) {
       return;
     }
 
     setLoading(true);
+    setErrors({});
 
-    // Simple mock login - in real app, call backend API
-    setTimeout(() => {
-      if (email === 'admin@dakshtra.com' && password === 'admin123') {
-        localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('userEmail', email);
-        toast.success('Login successful!');
-        navigate('/');
-      } else {
-        toast.error('Invalid credentials');
-      }
+    try {
+      const response = await loginApi({ email: email.trim().toLowerCase(), password });
+
+      localStorage.setItem('authToken', response.data.access_token);
+      localStorage.setItem('userEmail', response.data.email);
+      toast.success('Login successful!');
+      navigate('/');
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      const message = typeof detail === 'string' ? detail : 'Invalid email or password';
+      setErrors({ form: message });
+      toast.error(message);
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   return (
@@ -58,9 +86,10 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@dakshtra.com"
+                placeholder="you@example.com"
                 className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
               />
+              {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
             </div>
 
             <div>
@@ -74,7 +103,14 @@ export default function Login() {
                 placeholder="••••••••"
                 className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
               />
+              {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password}</p>}
             </div>
+
+            {errors.form && (
+              <div className="rounded-lg border border-red-700 bg-red-900/20 px-3 py-2 text-sm text-red-300">
+                {errors.form}
+              </div>
+            )}
 
             <button
               type="submit"
@@ -92,12 +128,12 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Demo credentials */}
-          <div className="mt-6 p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
-            <p className="text-sm text-slate-400 mb-2">Demo Credentials:</p>
-            <p className="text-sm text-slate-300">Email: admin@dakshtra.com</p>
-            <p className="text-sm text-slate-300">Password: admin123</p>
-          </div>
+          <p className="text-sm text-slate-400 mt-6 text-center">
+            New here?{' '}
+            <Link to="/signup" className="text-blue-400 hover:text-blue-300 font-medium">
+              Create an account
+            </Link>
+          </p>
         </div>
       </div>
     </div>

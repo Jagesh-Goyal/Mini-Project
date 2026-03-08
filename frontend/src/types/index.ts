@@ -40,3 +40,8 @@ export interface AssignSkillPayload {
   skill_id: number;
   proficiency_level: number;
 }
+
+export interface ForecastResult {
+  skill: string;
+  predicted_demand_next_month: number;
+}

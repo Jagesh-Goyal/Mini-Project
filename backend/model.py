@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
 from backend.database import Base
 
 class Employee(Base):
@@ -27,5 +26,15 @@ class EmployeeSkill(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"))
     skill_id = Column(Integer, ForeignKey("skills.id"))
     proficiency_level = Column(Integer)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(512), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     

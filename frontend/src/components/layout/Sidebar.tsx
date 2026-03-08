@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, Zap, AlertTriangle, Lightbulb, X } from 'lucide-react';
+import { LayoutDashboard, Users, Zap, AlertTriangle, Lightbulb, TrendingUp, X } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 
 const navItems = [
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/employees', icon: Users, label: 'Employees' },
   { to: '/skills', icon: Zap, label: 'Skills' },
   { to: '/gap', icon: AlertTriangle, label: 'Skill Gap' },
+  { to: '/forecast', icon: TrendingUp, label: 'Forecast' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
 ];
 

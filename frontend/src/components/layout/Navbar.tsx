@@ -8,6 +8,7 @@ const pageTitles: Record<string, string> = {
   '/employees': 'Employees',
   '/skills': 'Skills',
   '/gap': 'Skill Gap',
+  '/forecast': 'Forecast',
   '/recommendations': 'Recommendations',
 };
 
@@ -18,7 +19,7 @@ export default function Navbar() {
   const title = pageTitles[location.pathname] || 'Dashboard';
 
   const handleLogout = () => {
-    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('authToken');
     localStorage.removeItem('userEmail');
     toast.success('Logged out successfully');
     navigate('/login');

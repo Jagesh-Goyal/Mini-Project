@@ -3,11 +3,13 @@ import { Toaster } from 'react-hot-toast';
 import AppLayout from '@/components/layout/AppLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
+import Signup from '@/pages/Signup';
 import Dashboard from '@/pages/Dashboard';
 import Employees from '@/pages/Employees';
 import Skills from '@/pages/Skills';
 import SkillGap from '@/pages/SkillGap';
 import Recommendations from '@/pages/Recommendations';
+import Forecast from '@/pages/Forecast';
 
 function App() {
   return (
@@ -25,6 +27,7 @@ function App() {
       />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
         <Route
           element={
             <ProtectedRoute>
@@ -36,6 +39,7 @@ function App() {
           <Route path="/employees" element={<Employees />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/gap" element={<SkillGap />} />
+          <Route path="/forecast" element={<Forecast />} />
           <Route path="/recommendations" element={<Recommendations />} />
         </Route>
       </Routes>
