@@ -61,22 +61,22 @@ export default function Skills() {
   const categories = [...new Set(skills.map((s) => s.category))];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="page-shell space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Skills</h1>
+          <h1 className="text-3xl font-bold text-white font-display">Skills</h1>
           <p className="text-sm text-slate-400 mt-1">{skills.length} skills in {categories.length} categories</p>
         </div>
         <div className="flex gap-2">
           <button
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
+            className="btn-accent flex items-center gap-2 px-4 py-2"
             onClick={() => setShowAssign(true)}
           >
             Assign Skill
           </button>
           <button
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+            className="btn-primary flex items-center gap-2 px-4 py-2"
             onClick={() => setShowAdd(true)}
           >
             <Plus size={16} /> Add Skill
@@ -97,7 +97,7 @@ export default function Skills() {
           {skills.map((skill) => (
             <div
               key={skill.id}
-              className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 hover:border-blue-500/50 transition"
+              className="glass-panel p-4"
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 bg-blue-500/20 rounded-lg">
@@ -106,7 +106,7 @@ export default function Skills() {
                 <span className="text-xs text-slate-500">#{skill.id}</span>
               </div>
               <h3 className="text-white font-medium mb-2">{skill.skill_name}</h3>
-              <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs">
+              <span className="px-2 py-1 bg-amber-500/20 text-amber-200 rounded text-xs">
                 {skill.category}
               </span>
             </div>
@@ -116,8 +116,8 @@ export default function Skills() {
 
       {/* Add Skill Modal */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-[2px] flex items-center justify-center z-50 px-4">
+          <div className="auth-card p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">Add New Skill</h2>
               <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-white">
@@ -128,7 +128,7 @@ export default function Skills() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Skill Name</label>
                 <input
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="input-modern px-3 py-2"
                   placeholder="React.js"
                   value={form.skill_name}
                   onChange={(e) => setForm({ ...form, skill_name: e.target.value })}
@@ -137,7 +137,7 @@ export default function Skills() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Category</label>
                 <input
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="input-modern px-3 py-2"
                   placeholder="Frontend"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
@@ -145,13 +145,13 @@ export default function Skills() {
               </div>
               <div className="flex gap-3 pt-2">
                 <button
-                  className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition"
+                  className="btn-secondary flex-1 px-4 py-2"
                   onClick={() => setShowAdd(false)}
                 >
                   Cancel
                 </button>
                 <button
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50"
+                  className="btn-primary flex-1 px-4 py-2 disabled:opacity-50"
                   onClick={handleAdd}
                   disabled={submitting}
                 >
@@ -165,8 +165,8 @@ export default function Skills() {
 
       {/* Assign Skill Modal */}
       {showAssign && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-[2px] flex items-center justify-center z-50 px-4">
+          <div className="auth-card p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">Assign Skill to Employee</h2>
               <button onClick={() => setShowAssign(false)} className="text-slate-400 hover:text-white">
@@ -177,7 +177,7 @@ export default function Skills() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Employee</label>
                 <select
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="select-modern px-3 py-2"
                   value={assignForm.employee_id}
                   onChange={(e) => setAssignForm({ ...assignForm, employee_id: e.target.value })}
                 >
@@ -190,7 +190,7 @@ export default function Skills() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Skill</label>
                 <select
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="select-modern px-3 py-2"
                   value={assignForm.skill_id}
                   onChange={(e) => setAssignForm({ ...assignForm, skill_id: e.target.value })}
                 >
@@ -203,7 +203,7 @@ export default function Skills() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Proficiency Level (1-4)</label>
                 <select
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="select-modern px-3 py-2"
                   value={assignForm.proficiency_level}
                   onChange={(e) => setAssignForm({ ...assignForm, proficiency_level: e.target.value })}
                 >
@@ -215,13 +215,13 @@ export default function Skills() {
               </div>
               <div className="flex gap-3 pt-2">
                 <button
-                  className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition"
+                  className="btn-secondary flex-1 px-4 py-2"
                   onClick={() => setShowAssign(false)}
                 >
                   Cancel
                 </button>
                 <button
-                  className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition disabled:opacity-50"
+                  className="btn-accent flex-1 px-4 py-2 disabled:opacity-50"
                   onClick={handleAssign}
                   disabled={submitting}
                 >

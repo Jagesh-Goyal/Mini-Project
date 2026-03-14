@@ -1,4 +1,4 @@
-name: Workforce CI
+name: CI/CD Pipeline
 
 on:
   push:
@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend-tests:
@@ -19,12 +26,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install backend dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Syntax check backend + ml modules
+        run: python -m compileall -q backend ml
 
       - name: Run backend tests
-        run: python -m pytest backend/tests -q
+        run: python -m pytest backend/tests -q --tb=short
 
   frontend-checks:
     runs-on: ubuntu-latest
@@ -51,3 +64,14 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+  deploy-ready:
+    needs: [backend-tests, frontend-checks]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deployment gate
+        run: echo "All CI checks passed. Ready for deployment stage."

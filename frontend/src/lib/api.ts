@@ -4,10 +4,9 @@ import type {
   Skill,
   SkillDistribution,
   AssignSkillPayload,
-  ProficiencyData,
-  CategoryData,
-  ExperienceData,
   ForecastResult,
+  SkillHeatmapResponse,
+  WorkforceRiskResponse,
 } from '@/types';
 
 const BASE_URL = 'http://127.0.0.1:8000';
@@ -88,6 +87,10 @@ export const healthCheck = () => api.get('/');
 export const getEmployees = () => api.get<Employee[]>('/employees');
 export const addEmployee = (data: Omit<Employee, 'id'>) =>
   api.post<Employee>('/employees', data);
+export const updateEmployee = (id: number, data: Omit<Employee, 'id'>) =>
+  api.put<Employee>(`/employees/${id}`, data);
+export const deleteEmployee = (id: number) =>
+  api.delete(`/employees/${id}`);
 
 // Skills
 export const getSkills = () => api.get<Skill[]>('/skills');
@@ -113,13 +116,100 @@ export const getForecast = (skillName: string) =>
 export const getSkillDistribution = () =>
   api.get<SkillDistribution[]>('/skill-distribution');
 
-export const getProficiencyDistribution = () =>
-  api.get<ProficiencyData[]>('/analytics/proficiency-distribution');
+export const getWorkforceRiskAnalysis = () =>
+  api.get<WorkforceRiskResponse>('/analytics/workforce-risk');
 
-export const getSkillCategories = () =>
-  api.get<CategoryData[]>('/analytics/skill-categories');
+export const getSkillHeatmap = () =>
+  api.get<SkillHeatmapResponse>('/analytics/skill-heatmap');
 
-export const getExperienceDistribution = () =>
-  api.get<ExperienceData[]>('/analytics/experience-distribution');
+// ML Models
+export const trainMLModels = () =>
+  api.post('/ml/train');
+
+export interface MLForecastRow {
+  month: number;
+  date: string;
+  demand: number;
+  supply: number;
+  gap: number;
+}
+
+export interface MLForecastResponse {
+  skill: string;
+  months_ahead: number;
+  scenario: 'conservative' | 'balanced' | 'aggressive';
+  forecasts: Record<string, MLForecastRow[]>;
+}
+
+export const forecastSkillDemand = (
+  skillName: string,
+  monthsAhead: number = 3,
+  department?: string,
+  scenario: 'conservative' | 'balanced' | 'aggressive' = 'balanced'
+) =>
+  api.get<MLForecastResponse>(`/ml/forecast/${skillName}`, {
+    params: { months_ahead: monthsAhead, department, scenario },
+  });
+
+export const getTurnoverRisk = (employeeId: number) =>
+  api.get(`/ml/turnover-risk/${employeeId}`);
+
+// Resume Upload
+export interface ResumeMappedSkill {
+  skill_name: string;
+  skill_id: number;
+}
+
+export interface ResumeExtractionResult {
+  status: string;
+  message: string;
+  extracted_skills: string[];
+  mapped_skills: ResumeMappedSkill[];
+  experience_years: number;
+  name: string;
+}
+
+export interface CreateEmployeeFromResumeResponse {
+  status: string;
+  message: string;
+  employee_id: number;
+  assigned_skills: number;
+}
+
+export const uploadResume = (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post<ResumeExtractionResult>('/upload-resume', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const createEmployeeFromResume = (data: {
+  name: string;
+  department: string;
+  role: string;
+  experience_years: number;
+  proficiency_level: number;
+  skill_ids: number[];
+}) =>
+  api.post<CreateEmployeeFromResumeResponse>('/create-employee-from-resume', data);
+
+// Job Description Parser
+export interface JDSkillAnalysis {
+  skill_name: string;
+  skill_id: number | null;
+  current_count: number;
+  in_database: boolean;
+}
+
+export interface JDParseResponse {
+  status: string;
+  total_skills_found: number;
+  total_matched_in_db: number;
+  skill_analysis: JDSkillAnalysis[];
+}
+
+export const parseJobDescription = (jd_text: string) =>
+  api.post<JDParseResponse>('/parse-jd', { jd_text });
 
 export default api;

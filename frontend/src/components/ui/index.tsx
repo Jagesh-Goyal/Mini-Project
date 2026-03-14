@@ -1,10 +1,14 @@
 import { type ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
+
+interface EmptyStateProps {
+  message: string;
+  icon?: string;
+}
 
 interface MetricCardProps {
   title: string;
   value: number;
-  icon: LucideIcon;
+  emoji: string;
   color: 'blue' | 'purple' | 'cyan' | 'emerald' | 'rose';
   suffix?: string;
   delay?: number;
@@ -43,14 +47,14 @@ const colorMap = {
   },
 };
 
-export default function MetricCard({ title, value, icon: Icon, color, suffix }: MetricCardProps) {
+export default function MetricCard({ title, value, emoji, color, suffix }: MetricCardProps) {
   const c = colorMap[color];
 
   return (
     <div className={`glass-card p-5 ${c.border} cursor-default`}>
       <div className="flex items-start justify-between mb-4">
-        <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${c.iconBg} flex items-center justify-center`}>
-          <Icon size={22} className={c.iconColor} />
+        <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${c.iconBg} flex items-center justify-center text-xl`}>
+          {emoji}
         </div>
       </div>
       <div className="text-3xl font-bold text-white mb-1 tabular-nums">
@@ -155,10 +159,10 @@ export function Badge({ text, color = 'blue' }: BadgeProps) {
 }
 
 // Empty state
-export function EmptyState({ message, icon: Icon }: { message: string; icon?: LucideIcon }) {
+export function EmptyState({ message, icon }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-slate-500">
-      {Icon && <Icon size={48} className="mb-4 opacity-30" />}
+      {icon && <span className="text-5xl mb-4 opacity-30 block">{icon}</span>}
       <p className="text-sm">{message}</p>
     </div>
   );

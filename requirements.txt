@@ -14,6 +14,7 @@ confection==0.1.5
 cymem==2.0.13
 Faker==40.8.0
 fastapi==0.135.1
+python-multipart==0.0.20
 Flask==3.1.2
 Flask-SQLAlchemy==3.1.1
 greenlet==3.3.1
@@ -30,6 +31,7 @@ murmurhash==1.0.15
 numpy==2.4.2
 packaging==26.0
 pandas==3.0.1
+pdfplumber==0.10.3
 preshed==3.0.12
 pydantic==2.12.5
 pydantic_core==2.41.5
@@ -37,6 +39,8 @@ pytest==8.3.4
 python-jose==3.4.0
 Pygments==2.19.2
 python-dateutil==2.9.0.post0
+slowapi==0.1.9
+bleach==6.1.0
 requests==2.32.5
 rich==14.3.3
 scikit-learn==1.8.0
