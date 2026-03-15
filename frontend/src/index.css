@@ -101,4 +101,94 @@
 	.glow-rose {
 		@apply ring-1 ring-rose-500/30;
 	}
+
+	/* ── Glass panel (primary content card) ─────────────────── */
+	.glass-panel {
+		@apply rounded-2xl border border-slate-700/60 bg-slate-900/55 shadow-md backdrop-blur-sm
+		       transition-colors duration-200 hover:border-slate-600/70;
+	}
+
+	/* ── Auth / modal card ───────────────────────────────────── */
+	.auth-card {
+		@apply rounded-2xl border border-slate-700/70 bg-slate-900/80 shadow-xl backdrop-blur-md;
+	}
+
+	/* ── Form controls ───────────────────────────────────────── */
+	.input-modern {
+		@apply w-full rounded-xl border border-slate-700/80 bg-slate-950/70 text-sm text-slate-100
+		       placeholder-slate-500 transition
+		       focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20;
+	}
+
+	.select-modern {
+		@apply w-full rounded-xl border border-slate-700/80 bg-slate-950/70 text-sm text-slate-100
+		       transition appearance-none
+		       focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20;
+	}
+
+	/* ── Table row action buttons ────────────────────────────── */
+	.row-action-group {
+		@apply flex items-center;
+	}
+
+	.row-action-btn {
+		@apply flex h-7 w-7 items-center justify-center rounded-lg text-slate-400
+		       transition hover:bg-slate-700/70 hover:text-slate-100;
+	}
+
+	/* ── Risk level pills ────────────────────────────────────── */
+	.risk-high {
+		@apply rounded-full border border-rose-500/40 bg-rose-500/15 px-2.5 py-0.5 text-xs
+		       font-semibold text-rose-300;
+	}
+
+	.risk-medium {
+		@apply rounded-full border border-amber-400/40 bg-amber-400/15 px-2.5 py-0.5 text-xs
+		       font-semibold text-amber-200;
+	}
+
+	.risk-low {
+		@apply rounded-full border border-emerald-400/40 bg-emerald-400/15 px-2.5 py-0.5 text-xs
+		       font-semibold text-emerald-300;
+	}
+
+	/* ── Chart wrapper (adds cursor crosshair on hover) ─────── */
+	.chart-interactive {
+		@apply cursor-crosshair;
+	}
+
+	/* ── Staggered children fade-in animation ────────────────── */
+	.stagger-children > * {
+		@apply opacity-100;
+		animation: fadeSlideUp 0.35s ease both;
+	}
+
+	.stagger-children > *:nth-child(2) { animation-delay: 60ms; }
+	.stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+	.stagger-children > *:nth-child(4) { animation-delay: 180ms; }
+	.stagger-children > *:nth-child(5) { animation-delay: 240ms; }
+	.stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+
+	/* ── Font display utility ────────────────────────────────── */
+	.font-display {
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+
+	/* ── Risk pill (animated status indicator) ───────────────── */
+	.risk-pill {
+		@apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold
+		       uppercase tracking-widest;
+	}
+
+	.risk-dot {
+		@apply inline-block h-2 w-2 animate-pulse rounded-full bg-current;
+	}
+}
+
+@layer utilities {
+	@keyframes fadeSlideUp {
+		from { opacity: 0; transform: translateY(10px); }
+		to   { opacity: 1; transform: translateY(0); }
+	}
 }
