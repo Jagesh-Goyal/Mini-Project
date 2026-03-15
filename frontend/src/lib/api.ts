@@ -18,7 +18,7 @@ const api = axios.create({
   timeout: 10000,
 });
 
-// Attach bearer token on every request if logged in.
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
 
@@ -29,7 +29,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// If token is invalid/expired, clear local auth and send user to login.
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
