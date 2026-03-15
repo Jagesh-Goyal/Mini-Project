@@ -77,64 +77,66 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">D</span>
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-blue-600/10 via-slate-950 to-cyan-500/10" />
+      <div className="relative w-full max-w-md">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg shadow-blue-500/25">
+            <span className="text-2xl font-bold text-white">D</span>
           </div>
           <h1 className="text-2xl font-bold text-white">Dakshtra</h1>
-          <p className="text-slate-400 mt-2">Create your workspace account</p>
+          <p className="mt-2 text-sm text-slate-400">Create your workspace account</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
-          <h2 className="text-xl font-semibold text-white mb-6">Sign Up</h2>
+        <div className="glass-card-static p-6 sm:p-7">
+          <h2 className="mb-1 text-xl font-semibold text-white">Sign Up</h2>
+          <p className="mb-6 text-sm text-slate-400">Set up access for your talent planning workspace.</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Name</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Name</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter your name"
-                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+                className="form-input"
               />
               {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+                className="form-input"
               />
               {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
-                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+                className="form-input"
               />
               {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Confirm Password</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Confirm Password</label>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Re-enter your password"
-                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+                className="form-input"
               />
               {errors.confirmPassword && (
                 <p className="text-red-400 text-xs mt-1">{errors.confirmPassword}</p>
@@ -150,7 +152,7 @@ export default function Signup() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary w-full"
             >
               {loading ? (
                 <span>Creating account...</span>
@@ -163,9 +165,9 @@ export default function Signup() {
             </button>
           </form>
 
-          <p className="text-sm text-slate-400 mt-6 text-center">
+          <p className="mt-6 text-center text-sm text-slate-400">
             Already have an account?{' '}
-            <Link to="/login" className="text-blue-400 hover:text-blue-300 font-medium">
+            <Link to="/login" className="font-medium text-blue-400 transition hover:text-blue-300">
               Sign In
             </Link>
           </p>

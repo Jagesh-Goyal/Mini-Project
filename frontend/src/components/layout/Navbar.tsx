@@ -17,6 +17,7 @@ export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] || 'Dashboard';
+  const userEmail = localStorage.getItem('userEmail') ?? 'admin@dakshtra.com';
 
   const handleLogout = () => {
     localStorage.removeItem('authToken');
@@ -26,29 +27,30 @@ export default function Navbar() {
   };
 
   return (
-    <header className="h-16 border-b border-slate-700 bg-slate-900 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
-      <div className="flex items-center gap-4">
+    <header className="sticky top-0 z-30 h-16 border-b border-slate-700/70 bg-slate-900/70 px-4 backdrop-blur-md lg:px-6">
+      <div className="flex h-full items-center justify-between gap-4">
         <button
           onClick={toggleSidebar}
-          className="lg:hidden p-2 rounded-lg hover:bg-slate-700 transition text-slate-400 hover:text-white"
+          className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white lg:hidden"
         >
           <Menu size={20} />
         </button>
-        <h1 className="text-lg font-semibold text-white">{title}</h1>
-      </div>
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold text-white">{title}</h1>
+          <p className="hidden text-xs text-slate-400 sm:block">Workforce insights and actions</p>
+        </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-3 pl-3 border-l border-slate-700">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+        <div className="flex items-center gap-3 border-l border-slate-700/80 pl-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600/90">
             <User size={16} className="text-white" />
           </div>
           <div className="hidden sm:block">
-            <p className="text-sm font-medium text-white leading-tight">Admin</p>
-            <p className="text-xs text-slate-500 leading-tight">HR Manager</p>
+            <p className="text-sm font-medium leading-tight text-white">Admin</p>
+            <p className="max-w-[200px] truncate text-xs leading-tight text-slate-400">{userEmail}</p>
           </div>
           <button
             onClick={handleLogout}
-            className="p-2 rounded-lg hover:bg-slate-700 transition text-slate-400 hover:text-red-400"
+            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-rose-400"
             title="Logout"
           >
             <LogOut size={18} />
