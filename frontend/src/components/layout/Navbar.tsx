@@ -7,9 +7,14 @@ const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/employees': 'Employees',
   '/skills': 'Skills',
+  '/heatmap': 'Skill Heatmap',
   '/gap': 'Skill Gap',
   '/forecast': 'Forecast',
+  '/risk': 'Workforce Risk',
+  '/resume-parser': 'Resume Parser',
+  '/jd-parser': 'JD Parser',
   '/recommendations': 'Recommendations',
+  '/reports': 'Reports',
 };
 
 export default function Navbar() {
@@ -18,10 +23,15 @@ export default function Navbar() {
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] || 'Dashboard';
   const userEmail = localStorage.getItem('userEmail') ?? 'admin@dakshtra.com';
+  const userName = localStorage.getItem('userName') ?? 'Admin';
+  const storedRole = localStorage.getItem('userRole') ?? 'admin';
+  const roleLabel = storedRole === 'admin' ? 'Admin' : storedRole === 'hr_manager' ? 'HR Manager' : 'Employee';
 
   const handleLogout = () => {
     localStorage.removeItem('authToken');
     localStorage.removeItem('userEmail');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userRole');
     toast.success('Logged out successfully');
     navigate('/login');
   };
@@ -45,7 +55,8 @@ export default function Navbar() {
             <User size={16} className="text-white" />
           </div>
           <div className="hidden sm:block">
-            <p className="text-sm font-medium leading-tight text-white">Admin</p>
+            <p className="text-sm font-medium leading-tight text-white">{userName}</p>
+            <p className="text-[11px] uppercase tracking-wide text-cyan-300/80">{roleLabel}</p>
             <p className="max-w-[200px] truncate text-xs leading-tight text-slate-400">{userEmail}</p>
           </div>
           <button

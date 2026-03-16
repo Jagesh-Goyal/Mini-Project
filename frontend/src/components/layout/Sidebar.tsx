@@ -1,14 +1,32 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, Zap, AlertTriangle, Lightbulb, TrendingUp, X } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Users,
+  Zap,
+  AlertTriangle,
+  Lightbulb,
+  TrendingUp,
+  FileSpreadsheet,
+  ShieldAlert,
+  ScanSearch,
+  FileSearch,
+  Grid2x2,
+  X,
+} from 'lucide-react';
 import { useStore } from '@/store/useStore';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/employees', icon: Users, label: 'Employees' },
   { to: '/skills', icon: Zap, label: 'Skills' },
+  { to: '/heatmap', icon: Grid2x2, label: 'Heatmap' },
   { to: '/gap', icon: AlertTriangle, label: 'Skill Gap' },
   { to: '/forecast', icon: TrendingUp, label: 'Forecast' },
+  { to: '/risk', icon: ShieldAlert, label: 'Risk' },
+  { to: '/resume-parser', icon: ScanSearch, label: 'Resume Parser' },
+  { to: '/jd-parser', icon: FileSearch, label: 'JD Parser' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
+  { to: '/reports', icon: FileSpreadsheet, label: 'Reports' },
 ];
 
 export default function Sidebar() {

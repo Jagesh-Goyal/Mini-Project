@@ -2,16 +2,54 @@
 
 export interface Employee {
   id: number;
+  employee_code: string | null;
   name: string;
+  email: string;
   department: string;
   role: string;
   year_exp: number;
+  join_date: string | null;
+  manager: string | null;
+  performance_score: number;
+  team_name: string | null;
 }
 
 export interface Skill {
   id: number;
   skill_name: string;
   category: string;
+  description: string | null;
+}
+
+export interface EmployeeProfileSkill {
+  skill_id: number;
+  skill_name: string;
+  category: string;
+  proficiency_level: number;
+  proficiency_label: string;
+}
+
+export interface TrainingHistoryEntry {
+  id: number;
+  training_name: string;
+  provider: string | null;
+  status: string;
+  focus_skill: string | null;
+  duration_hours: number | null;
+  completion_date: string | null;
+}
+
+export interface EmployeeProfile {
+  employee: Employee;
+  skills: EmployeeProfileSkill[];
+  training_history: TrainingHistoryEntry[];
+}
+
+export interface CurrentUser {
+  email: string;
+  name: string;
+  role: string;
+  role_label?: string;
 }
 
 export interface SkillDistribution {
@@ -112,3 +150,50 @@ export interface UpskillingRecommendationsResponse {
   }>;
   recommendations: UpskillingRecommendation[];
 }
+
+export interface SkillGapOverviewScope {
+  scope: string;
+  total_available: number;
+  total_required: number;
+  total_gap: number;
+  critical_skills: SkillHeatmapRow[];
+  rows: SkillHeatmapRow[];
+}
+
+export interface SkillGapOverviewResponse {
+  generated_at: string;
+  organization: SkillGapOverviewScope;
+  departments: SkillGapOverviewScope[];
+  teams: SkillGapOverviewScope[];
+}
+
+export interface RecommendationCandidate {
+  employee_id: number;
+  employee_name: string;
+  department: string;
+  team_name: string | null;
+}
+
+export interface TransferRecommendationCandidate extends RecommendationCandidate {
+  proficiency_label: string;
+}
+
+export interface UpskillRecommendationCandidate extends RecommendationCandidate {
+  performance_score: number;
+}
+
+export interface StrategicRecommendation {
+  skill: string;
+  required: number;
+  current: number;
+  gap: number;
+  recommendation: string;
+  hire_count: number;
+  upskill_count: number;
+  transfer_count: number;
+  internal_transfer_candidates: TransferRecommendationCandidate[];
+  upskill_candidates: UpskillRecommendationCandidate[];
+  recommended_actions: Array<string | null>;
+}
+
+export type ReportFormat = 'csv' | 'xlsx' | 'pdf';

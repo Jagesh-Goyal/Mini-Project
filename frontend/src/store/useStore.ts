@@ -3,6 +3,8 @@ import type { Employee, Skill, SkillDistribution } from '@/types';
 import * as api from '@/lib/api';
 import toast from 'react-hot-toast';
 
+type EmployeePayload = api.EmployeePayload;
+
 interface AppState {
   // Data
   employees: Employee[];
@@ -23,8 +25,8 @@ interface AppState {
   fetchEmployees: () => Promise<void>;
   fetchSkills: () => Promise<void>;
   fetchSkillDistribution: () => Promise<void>;
-  addEmployee: (data: Omit<Employee, 'id'>) => Promise<boolean>;
-  addSkill: (data: { skill_name: string; category: string }) => Promise<boolean>;
+  addEmployee: (data: EmployeePayload) => Promise<boolean>;
+  addSkill: (data: { skill_name: string; category: string; description?: string | null }) => Promise<boolean>;
 }
 
 export const useStore = create<AppState>((set, get) => ({

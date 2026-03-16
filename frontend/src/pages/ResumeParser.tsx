@@ -1,83 +1,87 @@
-import React from "react";
-import { Upload } from "lucide-react";
-import ResumeUpload from "../components/ResumeUpload";
+import { BrainCircuit, FileText, Upload, UserRoundPlus } from 'lucide-react';
+import ResumeUpload from '@/components/ResumeUpload';
 
-export const ResumePage: React.FC = () => {
+const journeySteps = [
+  {
+    title: 'Upload Resume',
+    detail: 'Ingest PDF or TXT candidate resumes directly into the parser.',
+    accent: 'border-cyan-400/30 bg-cyan-500/10 text-cyan-100',
+  },
+  {
+    title: 'Extract Skills',
+    detail: 'Parse named skills, experience, and known workforce signals using NLP.',
+    accent: 'border-amber-400/30 bg-amber-500/10 text-amber-100',
+  },
+  {
+    title: 'Create Employee',
+    detail: 'Review the extracted profile, enrich missing metadata, and save it to the platform.',
+    accent: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100',
+  },
+];
+
+export default function ResumeParser() {
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3 mb-2">
-          <Upload className="w-8 h-8" />
-          Resume Parser
-        </h1>
-        <p className="text-slate-400">
-          Upload resumes and automatically extract skills using NLP
-        </p>
+    <div className="page-shell space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6 items-start">
+        <div className="glass-panel p-6 md:p-8 space-y-6 overflow-hidden relative">
+          <div className="absolute inset-y-0 right-0 w-40 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_65%)] pointer-events-none" />
+          <div className="relative">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-cyan-100">
+              <Upload size={14} />
+              AI Resume Intake
+            </div>
+            <h1 className="mt-4 text-3xl md:text-4xl font-display font-bold text-white">
+              Parse resumes into workforce-ready employee profiles
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm md:text-base text-slate-300/90">
+              Turn inbound resumes into structured employee records with extracted skills, experience, and assignment-ready metadata.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 relative">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+              <FileText className="w-5 h-5 text-cyan-300" />
+              <p className="mt-4 text-2xl font-bold text-white">PDF/TXT</p>
+              <p className="mt-1 text-sm text-slate-400">Supported candidate upload formats</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+              <BrainCircuit className="w-5 h-5 text-amber-300" />
+              <p className="mt-4 text-2xl font-bold text-white">NLP</p>
+              <p className="mt-1 text-sm text-slate-400">Skill extraction and experience detection</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+              <UserRoundPlus className="w-5 h-5 text-emerald-300" />
+              <p className="mt-4 text-2xl font-bold text-white">1 Flow</p>
+              <p className="mt-1 text-sm text-slate-400">From upload to employee creation</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass-panel p-6 space-y-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Process</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">How this workflow fits hiring intake</h2>
+          </div>
+
+          <div className="space-y-3">
+            {journeySteps.map((step, index) => (
+              <div key={step.title} className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold ${step.accent}`}>
+                    {index + 1}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">{step.title}</p>
+                    <p className="mt-1 text-sm text-slate-400">{step.detail}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Info Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-blue-900 to-blue-800 rounded-lg p-4 border border-blue-700">
-          <h3 className="text-lg font-semibold text-white mb-2">📄 Supported Formats</h3>
-          <p className="text-blue-200 text-sm">
-            Upload PDF or TXT resume files. NLP automatically extracts skills.
-          </p>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-900 to-purple-800 rounded-lg p-4 border border-purple-700">
-          <h3 className="text-lg font-semibold text-white mb-2">🧠 Skill Detection</h3>
-          <p className="text-purple-200 text-sm">
-            Recognizes 50+ skills including programming, cloud, DevOps, AI/ML.
-          </p>
-        </div>
-
-        <div className="bg-gradient-to-br from-green-900 to-green-800 rounded-lg p-4 border border-green-700">
-          <h3 className="text-lg font-semibold text-white mb-2">⚡ Quick Setup</h3>
-          <p className="text-green-200 text-sm">
-            One-click employee creation with auto-assigned skills and experience.
-          </p>
-        </div>
-      </div>
-
-      {/* Main Component */}
       <ResumeUpload />
-
-      {/* How It Works */}
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-lg p-6 border border-slate-700">
-        <h3 className="text-xl font-bold text-white mb-4">How It Works</h3>
-        <div className="space-y-3">
-          <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-              1
-            </div>
-            <div>
-              <p className="text-white font-semibold">Upload Resume</p>
-              <p className="text-slate-400 text-sm">PDF or TXT format</p>
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-              2
-            </div>
-            <div>
-              <p className="text-white font-semibold">NLP Extraction</p>
-              <p className="text-slate-400 text-sm">System extracts skills, experience, name</p>
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white font-bold">
-              3
-            </div>
-            <div>
-              <p className="text-white font-semibold">Review & Create</p>
-              <p className="text-slate-400 text-sm">Confirm details and create employee</p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
-};
-
-export default ResumePage;
+}

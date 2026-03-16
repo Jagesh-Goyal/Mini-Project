@@ -1,4 +1,5 @@
 import os
+import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
@@ -25,52 +26,118 @@ from ml.model import ml_models
 model.Base.metadata.create_all(bind=engine)
 
 
-def ensure_users_schema_compatibility() -> None:
+def _slugify_name(value: str) -> str:
+    clean_value = re.sub(r"[^a-z0-9]+", ".", value.strip().lower())
+    return clean_value.strip(".") or "employee"
+
+
+def ensure_workforce_schema_compatibility() -> None:
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
 
-    if "users" not in table_names:
-        return
-
-    user_columns = {column["name"] for column in inspector.get_columns("users")}
-
     with engine.begin() as connection:
-        if "role" not in user_columns:
-            connection.execute(
-                text("ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'user'")
-            )
+        if "employees" in table_names:
+            employee_columns = {column["name"] for column in inspector.get_columns("employees")}
+            if "employee_code" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN employee_code VARCHAR(50)"))
+            if "email" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN email VARCHAR(255)"))
+            if "join_date" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN join_date DATETIME"))
+            if "manager_name" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN manager_name VARCHAR(100)"))
+            if "performance_score" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN performance_score INTEGER DEFAULT 70"))
+            if "team_name" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN team_name VARCHAR(100)"))
+            if "created_at" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN created_at DATETIME"))
+            if "updated_at" not in employee_columns:
+                connection.execute(text("ALTER TABLE employees ADD COLUMN updated_at DATETIME"))
 
-        if "created_at" not in user_columns:
-            connection.execute(
-                text("ALTER TABLE users ADD COLUMN created_at DATETIME")
-            )
+        if "skills" in table_names:
+            skill_columns = {column["name"] for column in inspector.get_columns("skills")}
+            if "description" not in skill_columns:
+                connection.execute(text("ALTER TABLE skills ADD COLUMN description TEXT"))
+            if "created_at" not in skill_columns:
+                connection.execute(text("ALTER TABLE skills ADD COLUMN created_at DATETIME"))
 
+        if "employee_skills" in table_names:
+            employee_skill_columns = {column["name"] for column in inspector.get_columns("employee_skills")}
+            if "updated_at" not in employee_skill_columns:
+                connection.execute(text("ALTER TABLE employee_skills ADD COLUMN updated_at DATETIME"))
 
-def ensure_default_admin_user() -> None:
+        if "users" in table_names:
+            user_columns = {column["name"] for column in inspector.get_columns("users")}
+            if "role" not in user_columns:
+                connection.execute(
+                    text("ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'employee'")
+                )
+            if "created_at" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
+
     db = SessionLocal()
     try:
-        existing_admin = db.query(model.User).filter(model.User.email == "admin@dakshtra.com").first()
-        if existing_admin is None:
-            db.add(
-                model.User(
-                    name="Admin",
-                    email="admin@dakshtra.com",
-                    password_hash=hash_password("admin123"),
-                    role=Role.ADMIN,
-                )
-            )
-            db.commit()
+        employees = db.query(model.Employee).all()
+        for employee in employees:
+            if not employee.employee_code:
+                employee.employee_code = f"EMP-{employee.id:04d}"
+            if not employee.email:
+                employee.email = f"{_slugify_name(employee.name)}.{employee.id}@dakshtra.local"
+            if employee.performance_score is None:
+                employee.performance_score = 70
+            if not employee.team_name:
+                employee.team_name = employee.department or "General"
+            if not employee.manager_name:
+                employee.manager_name = f"Head of {employee.department or 'Operations'}"
+
+        skills = db.query(model.Skill).all()
+        for skill in skills:
+            if not skill.description:
+                skill.description = f"{skill.skill_name} capability for the {skill.category} domain."
+
+        users = db.query(model.User).all()
+        for user in users:
+            user.role = Role.normalize(user.role)
+
+        db.commit()
     finally:
         db.close()
 
-# seed database with sample data
+
+def ensure_default_system_users() -> None:
+    db = SessionLocal()
+    try:
+        default_users = [
+            ("Admin", "admin@dakshtra.com", "admin123", Role.ADMIN),
+            ("HR Manager", "hr@dakshtra.com", "hrmanager123", Role.HR_MANAGER),
+            ("Employee", "employee@dakshtra.com", "employee123", Role.EMPLOYEE),
+        ]
+
+        for name, email, password, role in default_users:
+            existing_user = db.query(model.User).filter(model.User.email == email).first()
+            if existing_user is None:
+                db.add(
+                    model.User(
+                        name=name,
+                        email=email,
+                        password_hash=hash_password(password),
+                        role=role,
+                    )
+                )
+
+        db.commit()
+    finally:
+        db.close()
+
+ensure_workforce_schema_compatibility()
+
 try:
     seed_database()
 except Exception as e:
     print(f"Database seeding skipped: {e}")
 
-ensure_users_schema_compatibility()
-ensure_default_admin_user()
+ensure_default_system_users()
 
 
 # FastAPI app

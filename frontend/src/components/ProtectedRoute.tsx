@@ -25,6 +25,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   if (!token || isTokenExpired(token)) {
     localStorage.removeItem('authToken');
     localStorage.removeItem('userEmail');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userRole');
     return <Navigate to="/login" replace />;
   }
 

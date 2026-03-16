@@ -1,15 +1,17 @@
+import csv
 import base64
 import hashlib
 import hmac
 import os
 import secrets
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import Any
 from datetime import datetime, timedelta, timezone
 
 import pdfplumber
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
+from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy import func
@@ -17,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal
 from ml.model import ml_models
-from backend.model import Employee, EmployeeSkill, Skill, User
+from backend.model import Employee, EmployeeSkill, Skill, TrainingHistory, User
 from ml.nlp_extractor import extract_skills_from_resume
 from backend.schemas import (
     AssignSkillSchema,
@@ -28,7 +30,9 @@ from backend.schemas import (
     SignUpResponse,
     SkillCreate,
     SkillDemandSchema,
+    SkillUpdate,
     TokenResponse,
+    TrainingHistoryCreate,
 )
 from backend.security import rate_limit, auth_limiter, api_limiter, Role
 
@@ -122,49 +126,154 @@ def get_current_user(
 # Protect all business APIs.
 api_router = APIRouter(tags=["api"], dependencies=[Depends(get_current_user)])
 
+PROFICIENCY_LABELS = {
+    1: "Beginner",
+    2: "Intermediate",
+    3: "Proficient",
+    4: "Advanced",
+    5: "Expert",
+}
 
-def _build_skill_heatmap_rows(db: Session) -> list[dict[str, Any]]:
-    category_growth = {
-        "AI/ML": 1.35,
-        "Cloud": 1.30,
-        "DevOps": 1.28,
-        "Security": 1.32,
-        "Backend": 1.20,
-        "Frontend": 1.18,
-        "Programming": 1.16,
-        "Database": 1.15,
-    }
-    strategic_skills = {
-        "Machine Learning",
-        "Artificial Intelligence",
-        "Cloud Security",
-        "Kubernetes",
-        "AWS",
-        "Cybersecurity",
+CATEGORY_GROWTH = {
+    "AI/ML": 1.35,
+    "Cloud": 1.30,
+    "DevOps": 1.28,
+    "Security": 1.32,
+    "Backend": 1.20,
+    "Frontend": 1.18,
+    "Programming": 1.16,
+    "Database": 1.15,
+    "Data Science": 1.25,
+}
+
+STRATEGIC_SKILLS = {
+    "Machine Learning",
+    "Artificial Intelligence",
+    "Cloud Security",
+    "Kubernetes",
+    "AWS",
+    "Cybersecurity",
+}
+
+
+def require_roles(*allowed_roles: str):
+    normalized_roles = {Role.normalize(role) for role in allowed_roles}
+
+    def dependency(current_user: dict = Depends(get_current_user)) -> dict:
+        user_role = Role.normalize(current_user.get("role"))
+        if user_role not in normalized_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action",
+            )
+
+        current_user["role"] = user_role
+        return current_user
+
+    return dependency
+
+
+def _proficiency_label(level: int) -> str:
+    return PROFICIENCY_LABELS.get(level, "Intermediate")
+
+
+def _slugify_name(value: str) -> str:
+    return "".join(char.lower() if char.isalnum() else "." for char in value).strip(".") or "employee"
+
+
+def _generate_employee_code(db: Session) -> str:
+    next_id = (db.query(func.max(Employee.id)).scalar() or 0) + 1
+    return f"EMP-{next_id:04d}"
+
+
+def _generated_employee_email(name: str, employee_code: str) -> str:
+    code_suffix = employee_code.lower().replace("emp-", "")
+    return f"{_slugify_name(name)}.{code_suffix}@dakshtra.local"
+
+
+def _serialize_employee(employee: Employee) -> dict[str, Any]:
+    join_date = employee.join_date.isoformat() if employee.join_date else None
+    return {
+        "id": employee.id,
+        "employee_code": employee.employee_code,
+        "name": employee.name,
+        "email": employee.email,
+        "department": employee.department,
+        "role": employee.role,
+        "year_exp": employee.year_exp,
+        "join_date": join_date,
+        "manager": employee.manager_name,
+        "performance_score": employee.performance_score,
+        "team_name": employee.team_name,
     }
 
+
+def _serialize_skill(skill: Skill) -> dict[str, Any]:
+    return {
+        "id": skill.id,
+        "skill_name": skill.skill_name,
+        "category": skill.category,
+        "description": skill.description,
+    }
+
+
+def _serialize_training(training: TrainingHistory) -> dict[str, Any]:
+    return {
+        "id": training.id,
+        "training_name": training.training_name,
+        "provider": training.provider,
+        "status": training.status,
+        "focus_skill": training.focus_skill,
+        "duration_hours": training.duration_hours,
+        "completion_date": training.completion_date.isoformat() if training.completion_date else None,
+    }
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.combine(value, datetime.min.time()).replace(tzinfo=timezone.utc)
+
+
+def _employee_ids_for_scope(db: Session, department: str | None = None, team_name: str | None = None) -> list[int]:
+    query = db.query(Employee.id)
+    if department:
+        query = query.filter(func.lower(Employee.department) == department.lower())
+    if team_name:
+        query = query.filter(func.lower(func.coalesce(Employee.team_name, "")) == team_name.lower())
+    return [row.id for row in query.all()]
+
+
+def _build_skill_heatmap_rows(db: Session, employee_ids: list[int] | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     skills = db.query(Skill).all()
 
     for skill in skills:
-        available_count = (
-            db.query(func.count(func.distinct(EmployeeSkill.employee_id)))
-            .filter(EmployeeSkill.skill_id == skill.id)
-            .scalar()
-        ) or 0
+        available_query = db.query(func.count(func.distinct(EmployeeSkill.employee_id))).filter(
+            EmployeeSkill.skill_id == skill.id
+        )
+        if employee_ids is not None:
+            if not employee_ids:
+                available_count = 0
+            else:
+                available_count = available_query.filter(EmployeeSkill.employee_id.in_(employee_ids)).scalar() or 0
+        else:
+            available_count = available_query.scalar() or 0
 
-        growth_factor = category_growth.get(skill.category or "", 1.15)
-        if skill.skill_name in strategic_skills:
+        growth_factor = CATEGORY_GROWTH.get(skill.category or "", 1.15)
+        if skill.skill_name in STRATEGIC_SKILLS:
             growth_factor += 0.10
 
         if available_count == 0:
-            required_count = 3 if skill.skill_name in strategic_skills else 2
+            required_count = 3 if skill.skill_name in STRATEGIC_SKILLS else 2
         else:
             required_count = max(
                 available_count + 1,
                 int(round(available_count * growth_factor)),
             )
-            if skill.skill_name in strategic_skills:
+            if skill.skill_name in STRATEGIC_SKILLS:
                 required_count += 1
 
         gap = max(required_count - available_count, 0)
@@ -213,6 +322,81 @@ def _severity_from_score(score: int) -> str:
     return "LOW"
 
 
+def _build_gap_overview_scope(label: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    total_available = sum(row["available"] for row in rows)
+    total_required = sum(row["required"] for row in rows)
+    total_gap = sum(row["gap"] for row in rows)
+
+    return {
+        "scope": label,
+        "total_available": total_available,
+        "total_required": total_required,
+        "total_gap": total_gap,
+        "critical_skills": [row for row in rows if row["status"] == "RED"][:5],
+        "rows": rows,
+    }
+
+
+def _dataframe_download_response(filename: str, rows: list[dict[str, Any]], export_format: str, title: str) -> Response:
+    if export_format == "csv":
+        buffer = StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()) if rows else ["message"])
+        writer.writeheader()
+        if rows:
+            writer.writerows(rows)
+        else:
+            writer.writerow({"message": "No data available"})
+
+        return Response(
+            content=buffer.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+        )
+
+    if export_format == "xlsx":
+        import pandas as pd
+
+        dataframe = pd.DataFrame(rows or [{"message": "No data available"}])
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            dataframe.to_excel(writer, sheet_name="Report", index=False)
+
+        return Response(
+            content=output.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.xlsx"'},
+        )
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    output = BytesIO()
+    pdf = canvas.Canvas(output, pagesize=A4)
+    width, height = A4
+    cursor_y = height - 50
+
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(40, cursor_y, title)
+    cursor_y -= 24
+
+    pdf.setFont("Helvetica", 9)
+    for row in rows[:40] or [{"message": "No data available"}]:
+        line = " | ".join(f"{key}: {value}" for key, value in row.items())
+        pdf.drawString(40, cursor_y, line[:140])
+        cursor_y -= 14
+        if cursor_y < 50:
+            pdf.showPage()
+            pdf.setFont("Helvetica", 9)
+            cursor_y = height - 50
+
+    pdf.save()
+    return Response(
+        content=output.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+    )
+
+
 # =============================
 # Auth APIs
 # =============================
@@ -232,7 +416,7 @@ def signup(request: Request, data: SignUpRequest, db: Session = Depends(get_db))
         name=data.name,
         email=data.email,
         password_hash=hash_password(data.password),
-        role=Role.USER,
+        role=Role.EMPLOYEE,
     )
 
     db.add(new_user)
@@ -268,6 +452,8 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "email": user.email,
+        "name": user.name,
+        "role": Role.normalize(user.role),
     }
 
 
@@ -284,7 +470,8 @@ def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends
     return {
         "email": user.email,
         "name": user.name,
-        "role": current_user.get("role", "user"),
+        "role": Role.normalize(current_user.get("role", Role.EMPLOYEE)),
+        "role_label": Role.label(current_user.get("role", Role.EMPLOYEE)),
     }
 
 
@@ -294,48 +481,189 @@ def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends
 
 @api_router.post("/employees")
 @rate_limit(api_limiter)
-def add_employee(request: Request, employee: EmployeeCreate, db: Session = Depends(get_db)):
+def add_employee(
+    request: Request,
+    employee: EmployeeCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    employee_code = employee.employee_code or _generate_employee_code(db)
+    employee_email = employee.email or _generated_employee_email(employee.name, employee_code)
+
+    existing_employee = db.query(Employee).filter(func.lower(Employee.email) == employee_email.lower()).first()
+    if existing_employee:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee email already exists")
+
+    duplicate_code = db.query(Employee).filter(Employee.employee_code == employee_code).first()
+    if duplicate_code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee code already exists")
+
     new_emp = Employee(
+        employee_code=employee_code,
         name=employee.name,
+        email=employee_email,
         department=employee.department,
         role=employee.role,
         year_exp=employee.year_exp,
+        join_date=_coerce_datetime(employee.join_date) or datetime.now(timezone.utc),
+        manager_name=employee.manager,
+        performance_score=employee.performance_score or 70,
+        team_name=employee.team_name or employee.department,
     )
 
     db.add(new_emp)
     db.commit()
     db.refresh(new_emp)
 
-    return new_emp
+    return _serialize_employee(new_emp)
 
 
 @api_router.get("/employees")
 def get_all_employees(request: Request, db: Session = Depends(get_db)):
-    return db.query(Employee).all()
+    employees = db.query(Employee).order_by(Employee.name.asc()).all()
+    return [_serialize_employee(employee) for employee in employees]
+
+
+@api_router.get("/employees/{employee_id}/profile")
+def get_employee_profile(request: Request, employee_id: int, db: Session = Depends(get_db)):
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    mappings = (
+        db.query(EmployeeSkill, Skill)
+        .join(Skill, Skill.id == EmployeeSkill.skill_id)
+        .filter(EmployeeSkill.employee_id == employee_id)
+        .order_by(Skill.skill_name.asc())
+        .all()
+    )
+
+    training_history = (
+        db.query(TrainingHistory)
+        .filter(TrainingHistory.employee_id == employee_id)
+        .order_by(TrainingHistory.completion_date.desc(), TrainingHistory.id.desc())
+        .all()
+    )
+
+    return {
+        "employee": _serialize_employee(employee),
+        "skills": [
+            {
+                "skill_id": skill.id,
+                "skill_name": skill.skill_name,
+                "category": skill.category,
+                "proficiency_level": mapping.proficiency_level,
+                "proficiency_label": _proficiency_label(mapping.proficiency_level),
+            }
+            for mapping, skill in mappings
+        ],
+        "training_history": [_serialize_training(training) for training in training_history],
+    }
+
+
+@api_router.get("/employees/{employee_id}/training-history")
+def get_employee_training_history(request: Request, employee_id: int, db: Session = Depends(get_db)):
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    training_history = (
+        db.query(TrainingHistory)
+        .filter(TrainingHistory.employee_id == employee_id)
+        .order_by(TrainingHistory.completion_date.desc(), TrainingHistory.id.desc())
+        .all()
+    )
+    return [_serialize_training(training) for training in training_history]
+
+
+@api_router.post("/employees/{employee_id}/training-history")
+@rate_limit(api_limiter)
+def add_training_history(
+    request: Request,
+    employee_id: int,
+    payload: TrainingHistoryCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    training = TrainingHistory(
+        employee_id=employee_id,
+        training_name=payload.training_name,
+        provider=payload.provider,
+        status=payload.status,
+        focus_skill=payload.focus_skill,
+        duration_hours=payload.duration_hours,
+        completion_date=_coerce_datetime(payload.completion_date),
+    )
+    db.add(training)
+    db.commit()
+    db.refresh(training)
+    return _serialize_training(training)
 
 
 @api_router.put("/employees/{employee_id}")
 @rate_limit(api_limiter)
-def update_employee(request: Request, employee_id: int, employee: EmployeeCreate, db: Session = Depends(get_db)):
+def update_employee(
+    request: Request,
+    employee_id: int,
+    employee: EmployeeCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    next_email = employee.email or emp.email or _generated_employee_email(employee.name, emp.employee_code or _generate_employee_code(db))
+
+    existing_email = (
+        db.query(Employee)
+        .filter(func.lower(Employee.email) == next_email.lower(), Employee.id != employee_id)
+        .first()
+    )
+    if existing_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee email already exists")
+
+    next_employee_code = employee.employee_code or emp.employee_code or _generate_employee_code(db)
+    duplicate_code = (
+        db.query(Employee)
+        .filter(Employee.employee_code == next_employee_code, Employee.id != employee_id)
+        .first()
+    )
+    if duplicate_code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee code already exists")
+
+    emp.employee_code = next_employee_code
     emp.name = employee.name
+    emp.email = next_email
     emp.department = employee.department
     emp.role = employee.role
     emp.year_exp = employee.year_exp
+    emp.join_date = _coerce_datetime(employee.join_date) or emp.join_date
+    emp.manager_name = employee.manager
+    emp.performance_score = employee.performance_score or emp.performance_score or 70
+    emp.team_name = employee.team_name or employee.department
     db.commit()
     db.refresh(emp)
-    return emp
+    return _serialize_employee(emp)
 
 
 @api_router.delete("/employees/{employee_id}")
 @rate_limit(api_limiter)
-def delete_employee(request: Request, employee_id: int, db: Session = Depends(get_db)):
+def delete_employee(
+    request: Request,
+    employee_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
     db.query(EmployeeSkill).filter(EmployeeSkill.employee_id == employee_id).delete()
+    db.query(TrainingHistory).filter(TrainingHistory.employee_id == employee_id).delete()
     db.delete(emp)
     db.commit()
     return {"message": f"Employee {employee_id} deleted successfully"}
@@ -347,8 +675,13 @@ def delete_employee(request: Request, employee_id: int, db: Session = Depends(ge
 
 @api_router.post("/skills")
 @rate_limit(api_limiter)
-def add_skill(request: Request, skill: SkillCreate, db: Session = Depends(get_db)):
-    existing = db.query(Skill).filter(Skill.skill_name == skill.skill_name).first()
+def add_skill(
+    request: Request,
+    skill: SkillCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    existing = db.query(Skill).filter(func.lower(Skill.skill_name) == skill.skill_name.lower()).first()
 
     if existing:
         return {"error": "Skill already exists"}
@@ -356,6 +689,7 @@ def add_skill(request: Request, skill: SkillCreate, db: Session = Depends(get_db
     new_skill = Skill(
         skill_name=skill.skill_name,
         category=skill.category,
+        description=skill.description,
     )
 
     db.add(new_skill)
@@ -367,13 +701,63 @@ def add_skill(request: Request, skill: SkillCreate, db: Session = Depends(get_db
         "data": {
             "id": new_skill.id,
             "skill_name": new_skill.skill_name,
+            "category": new_skill.category,
+            "description": new_skill.description,
         },
     }
 
 
 @api_router.get("/skills")
 def get_all_skills(request: Request, db: Session = Depends(get_db)):
-    return db.query(Skill).all()
+    skills = db.query(Skill).order_by(Skill.category.asc(), Skill.skill_name.asc()).all()
+    return [_serialize_skill(skill) for skill in skills]
+
+
+@api_router.put("/skills/{skill_id}")
+@rate_limit(api_limiter)
+def update_skill(
+    request: Request,
+    skill_id: int,
+    payload: SkillUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if skill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+    existing = (
+        db.query(Skill)
+        .filter(func.lower(Skill.skill_name) == payload.skill_name.lower(), Skill.id != skill_id)
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Skill already exists")
+
+    skill.skill_name = payload.skill_name
+    skill.category = payload.category
+    skill.description = payload.description
+    db.commit()
+    db.refresh(skill)
+    return _serialize_skill(skill)
+
+
+@api_router.delete("/skills/{skill_id}")
+@rate_limit(api_limiter)
+def delete_skill(
+    request: Request,
+    skill_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if skill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+    db.query(EmployeeSkill).filter(EmployeeSkill.skill_id == skill_id).delete()
+    db.delete(skill)
+    db.commit()
+    return {"message": f"Skill {skill.skill_name} deleted successfully"}
 
 
 # =============================
@@ -382,7 +766,12 @@ def get_all_skills(request: Request, db: Session = Depends(get_db)):
 
 @api_router.post("/assign-skill")
 @rate_limit(api_limiter)
-def assign_skill(request: Request, data: AssignSkillSchema, db: Session = Depends(get_db)):
+def assign_skill(
+    request: Request,
+    data: AssignSkillSchema,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
     employee = db.query(Employee).filter(Employee.id == data.employee_id).first()
     if not employee:
         return {"error": "Employee not found"}
@@ -391,17 +780,32 @@ def assign_skill(request: Request, data: AssignSkillSchema, db: Session = Depend
     if not skill:
         return {"error": "Skill not found"}
 
-    new_mapping = EmployeeSkill(
-        employee_id=data.employee_id,
-        skill_id=data.skill_id,
-        proficiency_level=data.proficiency_level,
+    mapping = (
+        db.query(EmployeeSkill)
+        .filter(EmployeeSkill.employee_id == data.employee_id, EmployeeSkill.skill_id == data.skill_id)
+        .first()
     )
 
-    db.add(new_mapping)
-    db.commit()
-    db.refresh(new_mapping)
+    if mapping is None:
+        mapping = EmployeeSkill(
+            employee_id=data.employee_id,
+            skill_id=data.skill_id,
+            proficiency_level=data.proficiency_level,
+        )
+        db.add(mapping)
+    else:
+        mapping.proficiency_level = data.proficiency_level
 
-    return {"message": "Skill assigned successfully"}
+    db.commit()
+    db.refresh(mapping)
+
+    return {
+        "message": "Skill assigned successfully",
+        "skill_name": skill.skill_name,
+        "employee_name": employee.name,
+        "proficiency_level": mapping.proficiency_level,
+        "proficiency_label": _proficiency_label(mapping.proficiency_level),
+    }
 
 
 @api_router.get("/employee-skills/{employee_id}")
@@ -410,19 +814,23 @@ def get_employee_skills(request: Request, employee_id: int, db: Session = Depend
     if not employee:
         return {"error": "Employee not found"}
 
-    mappings = db.query(EmployeeSkill).filter(EmployeeSkill.employee_id == employee_id).all()
+    mappings = (
+        db.query(EmployeeSkill, Skill)
+        .join(Skill, Skill.id == EmployeeSkill.skill_id)
+        .filter(EmployeeSkill.employee_id == employee_id)
+        .all()
+    )
 
-    skill_data = []
-
-    for mapping in mappings:
-        skill = db.query(Skill).filter(Skill.id == mapping.skill_id).first()
-
-        skill_data.append(
-            {
-                "skill_name": skill.skill_name,
-                "proficiency_level": mapping.proficiency_level,
-            }
-        )
+    skill_data = [
+        {
+            "skill_id": skill.id,
+            "skill_name": skill.skill_name,
+            "category": skill.category,
+            "proficiency_level": mapping.proficiency_level,
+            "proficiency_label": _proficiency_label(mapping.proficiency_level),
+        }
+        for mapping, skill in mappings
+    ]
 
     return {
         "employee_name": employee.name,
@@ -466,11 +874,15 @@ def calculate_skill_gap(request: Request, data: SkillDemandSchema, db: Session =
     if not skill:
         return {"error": "Skill not found"}
 
-    current_count = (
-        db.query(func.count(EmployeeSkill.employee_id))
-        .filter(EmployeeSkill.skill_id == skill.id)
-        .scalar()
+    employee_ids = _employee_ids_for_scope(db, department=data.department, team_name=data.team_name)
+
+    current_query = db.query(func.count(func.distinct(EmployeeSkill.employee_id))).filter(
+        EmployeeSkill.skill_id == skill.id
     )
+    if data.department or data.team_name:
+        current_count = current_query.filter(EmployeeSkill.employee_id.in_(employee_ids)).scalar() if employee_ids else 0
+    else:
+        current_count = current_query.scalar()
 
     gap = data.required_count - current_count
 
@@ -479,6 +891,9 @@ def calculate_skill_gap(request: Request, data: SkillDemandSchema, db: Session =
         "required": data.required_count,
         "current": current_count,
         "gap": gap,
+        "department": data.department,
+        "team_name": data.team_name,
+        "scope": data.team_name or data.department or "Organization",
     }
 
 
@@ -496,12 +911,50 @@ def get_recommendation(request: Request, skill_name: str, required_count: int, d
         return {"error": "Skill not found"}
 
     current_count = (
-        db.query(func.count(EmployeeSkill.employee_id))
+        db.query(func.count(func.distinct(EmployeeSkill.employee_id)))
         .filter(EmployeeSkill.skill_id == skill.id)
         .scalar()
-    )
+    ) or 0
 
     gap = required_count - current_count
+
+    holders = (
+        db.query(Employee, EmployeeSkill)
+        .join(EmployeeSkill, Employee.id == EmployeeSkill.employee_id)
+        .filter(EmployeeSkill.skill_id == skill.id)
+        .order_by(EmployeeSkill.proficiency_level.desc(), Employee.performance_score.desc())
+        .all()
+    )
+    internal_transfer_candidates = [
+        {
+            "employee_id": employee.id,
+            "employee_name": employee.name,
+            "department": employee.department,
+            "team_name": employee.team_name,
+            "proficiency_label": _proficiency_label(mapping.proficiency_level),
+        }
+        for employee, mapping in holders
+        if mapping.proficiency_level >= 3
+    ][:5]
+
+    holder_ids = {employee.id for employee, _ in holders}
+    upskill_candidates = [
+        {
+            "employee_id": employee.id,
+            "employee_name": employee.name,
+            "department": employee.department,
+            "team_name": employee.team_name,
+            "performance_score": employee.performance_score,
+        }
+        for employee in db.query(Employee)
+        .order_by(Employee.performance_score.desc(), Employee.year_exp.desc())
+        .all()
+        if employee.id not in holder_ids
+    ][:6]
+
+    transfer_count = min(max(gap, 0), len(internal_transfer_candidates), 2)
+    upskill_count = min(max(gap - transfer_count, 0), len(upskill_candidates), 4)
+    hire_count = max(gap - transfer_count - upskill_count, 0)
 
     if gap <= 0:
         decision = "No action required"
@@ -518,6 +971,16 @@ def get_recommendation(request: Request, skill_name: str, required_count: int, d
         "current": current_count,
         "gap": gap,
         "recommendation": decision,
+        "hire_count": hire_count,
+        "upskill_count": upskill_count,
+        "transfer_count": transfer_count,
+        "internal_transfer_candidates": internal_transfer_candidates,
+        "upskill_candidates": upskill_candidates,
+        "recommended_actions": [
+            f"Hire {hire_count} employees" if hire_count else None,
+            f"Upskill {upskill_count} current employees" if upskill_count else None,
+            f"Move {transfer_count} internal experts" if transfer_count else None,
+        ],
     }
 
 
@@ -582,11 +1045,20 @@ def create_employee_from_resume(
     data: CreateEmployeeFromResumeSchema,
     db: Session = Depends(get_db),
 ):
+    employee_code = data.employee_code or _generate_employee_code(db)
+    email = data.email or _generated_employee_email(data.name, employee_code)
+
     new_employee = Employee(
+        employee_code=employee_code,
         name=data.name,
+        email=email,
         department=data.department,
         role=data.role,
         year_exp=data.experience_years,
+        join_date=_coerce_datetime(data.join_date) or datetime.now(timezone.utc),
+        manager_name=data.manager,
+        performance_score=data.performance_score,
+        team_name=data.team_name or data.department,
     )
     db.add(new_employee)
     db.commit()
@@ -620,6 +1092,8 @@ def create_employee_from_resume(
         "status": "success",
         "message": "Employee created successfully",
         "employee_id": new_employee.id,
+        "employee_code": new_employee.employee_code,
+        "email": new_employee.email,
         "assigned_skills": assigned_count,
     }
 
@@ -817,6 +1291,33 @@ def get_skill_heatmap(request: Request, db: Session = Depends(get_db)):
             "RED": "Critical Gap",
         },
         "rows": rows,
+    }
+
+
+@api_router.get("/analytics/skill-gap-overview")
+@rate_limit(api_limiter)
+def get_skill_gap_overview(request: Request, db: Session = Depends(get_db)):
+    organization_rows = _build_skill_heatmap_rows(db)
+    employees = db.query(Employee).all()
+
+    departments = []
+    for department in sorted({employee.department or "Unknown" for employee in employees}):
+        rows = _build_skill_heatmap_rows(db, _employee_ids_for_scope(db, department=department))
+        departments.append(_build_gap_overview_scope(department, rows))
+
+    teams = []
+    for team_name in sorted({employee.team_name or employee.department or "General" for employee in employees}):
+        rows = _build_skill_heatmap_rows(db, _employee_ids_for_scope(db, team_name=team_name))
+        teams.append(_build_gap_overview_scope(team_name, rows))
+
+    departments.sort(key=lambda item: item["total_gap"], reverse=True)
+    teams.sort(key=lambda item: item["total_gap"], reverse=True)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "organization": _build_gap_overview_scope("Organization", organization_rows),
+        "departments": departments,
+        "teams": teams,
     }
 
 
@@ -1041,8 +1542,8 @@ def get_proficiency_distribution(request: Request, db: Session = Depends(get_db)
 
     levels = {
         1: "Beginner",
-        2: "Elementary",
-        3: "Intermediate",
+        2: "Intermediate",
+        3: "Proficient",
         4: "Advanced",
         5: "Expert",
     }
@@ -1104,6 +1605,167 @@ def get_experience_distribution(request: Request, db: Session = Depends(get_db))
             exp_buckets["10+ years"] += 1
 
     return [{"experience_range": key, "count": value} for key, value in exp_buckets.items()]
+
+
+@api_router.get("/analytics/upskilling-recommendations")
+@rate_limit(api_limiter)
+def get_upskilling_recommendations(request: Request, db: Session = Depends(get_db)):
+    heatmap_rows = _build_skill_heatmap_rows(db)
+    high_gap_skills = [row for row in heatmap_rows if row["gap"] > 0][:6]
+
+    employee_skill_rows = (
+        db.query(EmployeeSkill, Skill)
+        .join(Skill, Skill.id == EmployeeSkill.skill_id)
+        .all()
+    )
+    skills_by_employee: dict[int, list[str]] = {}
+    for mapping, skill in employee_skill_rows:
+        skills_by_employee.setdefault(mapping.employee_id, []).append(skill.skill_name)
+
+    recommendations = []
+    employees = db.query(Employee).order_by(Employee.performance_score.desc(), Employee.year_exp.desc()).all()
+    for employee in employees:
+        current_skills = skills_by_employee.get(employee.id, [])
+        recommended_skills = [
+            row["skill"]
+            for row in high_gap_skills
+            if row["skill"] not in current_skills
+        ][:3]
+
+        if not recommended_skills:
+            continue
+
+        priority = "HIGH" if (employee.performance_score or 0) >= 85 else "MEDIUM"
+        recommendations.append(
+            {
+                "employee_id": employee.id,
+                "employee_name": employee.name,
+                "department": employee.department,
+                "current_skills": current_skills[:6],
+                "recommended_skills": recommended_skills,
+                "priority": priority,
+                "rationale": (
+                    f"{employee.name} has strong performance and can help close high-gap skills for "
+                    f"{employee.department}."
+                ),
+            }
+        )
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "high_gap_skills": [
+            {
+                "skill": row["skill"],
+                "gap": row["gap"],
+                "status_label": row["status_label"],
+            }
+            for row in high_gap_skills
+        ],
+        "recommendations": recommendations[:10],
+    }
+
+
+@api_router.get("/reports/skill-gap")
+@rate_limit(api_limiter)
+def export_skill_gap_report(
+    request: Request,
+    export_format: str = Query("csv", pattern="^(csv|xlsx|pdf)$"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    rows = _build_skill_heatmap_rows(db)
+    return _dataframe_download_response("skill-gap-report", rows, export_format, "Skill Gap Report")
+
+
+@api_router.get("/reports/employee-skills")
+@rate_limit(api_limiter)
+def export_employee_skill_report(
+    request: Request,
+    export_format: str = Query("csv", pattern="^(csv|xlsx|pdf)$"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    rows = []
+    assignments = (
+        db.query(Employee, Skill, EmployeeSkill)
+        .join(EmployeeSkill, Employee.id == EmployeeSkill.employee_id)
+        .join(Skill, Skill.id == EmployeeSkill.skill_id)
+        .order_by(Employee.name.asc(), Skill.skill_name.asc())
+        .all()
+    )
+    for employee, skill, mapping in assignments:
+        rows.append(
+            {
+                "employee_code": employee.employee_code,
+                "employee_name": employee.name,
+                "email": employee.email,
+                "department": employee.department,
+                "team_name": employee.team_name,
+                "role": employee.role,
+                "skill": skill.skill_name,
+                "category": skill.category,
+                "proficiency": _proficiency_label(mapping.proficiency_level),
+                "performance_score": employee.performance_score,
+            }
+        )
+
+    return _dataframe_download_response("employee-skill-report", rows, export_format, "Employee Skill Report")
+
+
+@api_router.get("/reports/forecast")
+@rate_limit(api_limiter)
+def export_forecast_report(
+    request: Request,
+    skill_name: str,
+    months_ahead: int = Query(6, ge=3, le=12),
+    scenario: str = Query("balanced"),
+    export_format: str = Query("csv", pattern="^(csv|xlsx|pdf)$"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    skill_obj = db.query(Skill).filter(func.lower(Skill.skill_name) == skill_name.lower()).first()
+    if skill_obj is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+    if ml_models.demand_model is None:
+        train_result = ml_models.train_models(db)
+        if "error" in train_result:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=train_result["error"])
+
+    scenario_multiplier = {
+        "conservative": 0.90,
+        "balanced": 1.00,
+        "aggressive": 1.15,
+    }
+    scenario_key = scenario.lower().strip()
+    if scenario_key not in scenario_multiplier:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scenario")
+
+    forecast_result = ml_models.forecast_demand(
+        skill_name=skill_obj.skill_name,
+        months_ahead=months_ahead,
+        db=db,
+    )
+    if "error" in forecast_result:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=forecast_result["error"])
+
+    rows = []
+    for department, predictions in forecast_result.get("forecasts", {}).items():
+        for row in predictions:
+            adjusted_demand = max(0, int(round(row["demand"] * scenario_multiplier[scenario_key])))
+            rows.append(
+                {
+                    "skill": skill_obj.skill_name,
+                    "department": department,
+                    "date": row["date"],
+                    "scenario": scenario_key,
+                    "demand": adjusted_demand,
+                    "supply": row["supply"],
+                    "gap": max(adjusted_demand - row["supply"], 0),
+                }
+            )
+
+    return _dataframe_download_response("forecast-report", rows, export_format, "Forecast Report")
 
 
 router.include_router(auth_router)

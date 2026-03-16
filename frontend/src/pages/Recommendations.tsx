@@ -1,15 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Lightbulb } from 'lucide-react';
 import * as api from '@/lib/api';
 import { useStore } from '@/store/useStore';
 import toast from 'react-hot-toast';
+import type { StrategicRecommendation, UpskillingRecommendationsResponse } from '@/types';
 
 export default function Recommendations() {
-  const { skills } = useStore();
+  const { skills, fetchSkills } = useStore();
   const [selectedSkill, setSelectedSkill] = useState('');
   const [requiredCount, setRequiredCount] = useState('');
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<StrategicRecommendation | null>(null);
+  const [orgRecommendations, setOrgRecommendations] = useState<UpskillingRecommendationsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    void fetchSkills();
+    void loadUpskillingRecommendations();
+  }, []);
+
+  const loadUpskillingRecommendations = async () => {
+    try {
+      const response = await api.getUpskillingRecommendations();
+      setOrgRecommendations(response.data);
+    } catch {
+      toast.error('Failed to fetch upskilling recommendations');
+    }
+  };
 
   const handleGetRecommendation = async () => {
     if (!selectedSkill || !requiredCount) {
@@ -123,8 +139,120 @@ export default function Recommendations() {
               </div>
             </div>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+            <div className="glass-card p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Hire</p>
+              <p className="text-3xl font-bold text-rose-300 mt-2">{result.hire_count}</p>
+            </div>
+            <div className="glass-card p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Upskill</p>
+              <p className="text-3xl font-bold text-cyan-300 mt-2">{result.upskill_count}</p>
+            </div>
+            <div className="glass-card p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Internal Transfer</p>
+              <p className="text-3xl font-bold text-amber-300 mt-2">{result.transfer_count}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-6">
+            <div className="glass-card p-4">
+              <h3 className="text-white font-semibold mb-3">Internal Transfer Candidates</h3>
+              {result.internal_transfer_candidates.length === 0 ? (
+                <p className="text-slate-400 text-sm">No transfer candidates identified.</p>
+              ) : (
+                <div className="space-y-3">
+                  {result.internal_transfer_candidates.map((candidate) => (
+                    <div key={`transfer-${candidate.employee_id}`} className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
+                      <p className="text-white font-medium">{candidate.employee_name}</p>
+                      <p className="text-xs text-slate-400 mt-1">{candidate.department} • {candidate.team_name ?? 'General'} • {candidate.proficiency_label}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="glass-card p-4">
+              <h3 className="text-white font-semibold mb-3">Upskill Candidates</h3>
+              {result.upskill_candidates.length === 0 ? (
+                <p className="text-slate-400 text-sm">No upskill candidates identified.</p>
+              ) : (
+                <div className="space-y-3">
+                  {result.upskill_candidates.map((candidate) => (
+                    <div key={`upskill-${candidate.employee_id}`} className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
+                      <p className="text-white font-medium">{candidate.employee_name}</p>
+                      <p className="text-xs text-slate-400 mt-1">{candidate.department} • {candidate.team_name ?? 'General'} • Score {candidate.performance_score}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
+
+      <div className="glass-panel p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Training & Upskilling Recommendations</h2>
+            <p className="text-sm text-slate-400 mt-1">Suggested learning paths to close the organization’s top capability gaps.</p>
+          </div>
+          <button className="btn-secondary px-4 py-2" onClick={() => void loadUpskillingRecommendations()}>
+            Refresh
+          </button>
+        </div>
+
+        {!orgRecommendations ? (
+          <p className="text-slate-400">Loading recommendations...</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {orgRecommendations.high_gap_skills.map((gap) => (
+                <span key={gap.skill} className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/25 text-amber-100 text-sm">
+                  {gap.skill} • gap {gap.gap}
+                </span>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {orgRecommendations.recommendations.map((recommendation) => (
+                <div key={`rec-${recommendation.employee_id}`} className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-white font-semibold">{recommendation.employee_name}</p>
+                      <p className="text-xs text-slate-400 mt-1">{recommendation.department}</p>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg text-xs bg-cyan-500/15 border border-cyan-400/25 text-cyan-100">
+                      {recommendation.priority}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-300 mt-3">{recommendation.rationale}</p>
+                  <div className="mt-4">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500 mb-2">Current Skills</p>
+                    <div className="flex flex-wrap gap-2">
+                      {recommendation.current_skills.map((skill) => (
+                        <span key={`${recommendation.employee_id}-${skill}`} className="px-2 py-1 rounded-lg bg-white/6 border border-white/10 text-slate-200 text-xs">
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500 mb-2">Recommended Skills</p>
+                    <div className="flex flex-wrap gap-2">
+                      {recommendation.recommended_skills.map((skill) => (
+                        <span key={`${recommendation.employee_id}-target-${skill}`} className="px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-400/25 text-emerald-100 text-xs">
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

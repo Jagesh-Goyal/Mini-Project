@@ -14,6 +14,7 @@ import WorkforceRisk from '@/pages/WorkforceRisk';
 import ResumeParser from '@/pages/ResumeParser';
 import Recommendations from '@/pages/Recommendations';
 import JDParser from '@/pages/JDParser';
+import Reports from '@/pages/Reports';
 
 function App() {
   return (
@@ -51,6 +52,7 @@ function App() {
           <Route path="/resume-parser" element={<ResumeParser />} />
           <Route path="/recommendations" element={<Recommendations />} />
           <Route path="/jd-parser" element={<JDParser />} />
+          <Route path="/reports" element={<Reports />} />
         </Route>
       </Routes>
     </BrowserRouter>

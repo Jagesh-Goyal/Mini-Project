@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 """
 Machine Learning Models for Demand Forecasting & Turnover Prediction
 - Demand Forecasting: Random Forest Regressor
@@ -450,15 +449,3 @@ class MLModels:
 
 # Global instance
 ml_models = MLModels()
-=======
-﻿"""
-Backward-compatibility shim.
-ML logic has been moved to the top-level ml/ package.
-    ml/model.py         -> MLModels class, ml_models singleton
-    ml/nlp_extractor.py -> NLPSkillExtractor, extract_skills_from_resume
-"""
-# Re-export everything so existing imports like
-#   from backend.ml_model import ml_models
-# keep working without changes.
-from ml.model import MLModels, ml_models  # noqa: F401
->>>>>>> 74efafe (add backend)

@@ -1,12 +1,19 @@
 import axios from 'axios';
 import type {
+  CurrentUser,
   Employee,
+  EmployeeProfile,
+  StrategicRecommendation,
   Skill,
   SkillDistribution,
   AssignSkillPayload,
   ForecastResult,
   SkillHeatmapResponse,
+  SkillGapOverviewResponse,
+  TrainingHistoryEntry,
+  UpskillingRecommendationsResponse,
   WorkforceRiskResponse,
+  ReportFormat,
 } from '@/types';
 
 const BASE_URL = 'http://127.0.0.1:8000';
@@ -36,6 +43,8 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem('userEmail');
+      localStorage.removeItem('userName');
+      localStorage.removeItem('userRole');
 
       if (window.location.pathname !== '/login' && window.location.pathname !== '/signup') {
         window.location.href = '/login';
@@ -56,6 +65,8 @@ export interface LoginResponse {
   token_type: string;
   expires_in: number;
   email: string;
+  name: string;
+  role: string;
 }
 
 export interface SignUpPayload {
@@ -78,35 +89,72 @@ export const login = (data: LoginPayload) =>
   api.post<LoginResponse>('/auth/login', data);
 
 export const getCurrentUser = () =>
-  api.get<{ email: string; role: string }>('/auth/me');
+  api.get<CurrentUser>('/auth/me');
 
 // Health check
 export const healthCheck = () => api.get('/');
 
+export interface EmployeePayload {
+  employee_code?: string | null;
+  name: string;
+  email?: string | null;
+  department: string;
+  role: string;
+  year_exp: number;
+  join_date?: string | null;
+  manager?: string | null;
+  performance_score?: number;
+  team_name?: string | null;
+}
+
 // Employees
 export const getEmployees = () => api.get<Employee[]>('/employees');
-export const addEmployee = (data: Omit<Employee, 'id'>) =>
+export const addEmployee = (data: EmployeePayload) =>
   api.post<Employee>('/employees', data);
-export const updateEmployee = (id: number, data: Omit<Employee, 'id'>) =>
+export const updateEmployee = (id: number, data: EmployeePayload) =>
   api.put<Employee>(`/employees/${id}`, data);
 export const deleteEmployee = (id: number) =>
   api.delete(`/employees/${id}`);
+export const getEmployeeProfile = (id: number) =>
+  api.get<EmployeeProfile>(`/employees/${id}/profile`);
+
+export interface TrainingHistoryPayload {
+  training_name: string;
+  provider?: string | null;
+  status: string;
+  focus_skill?: string | null;
+  duration_hours?: number | null;
+  completion_date?: string | null;
+}
+
+export const addTrainingHistory = (employeeId: number, data: TrainingHistoryPayload) =>
+  api.post<TrainingHistoryEntry>(`/employees/${employeeId}/training-history`, data);
 
 // Skills
 export const getSkills = () => api.get<Skill[]>('/skills');
-export const addSkill = (data: { skill_name: string; category: string }) =>
+export const addSkill = (data: { skill_name: string; category: string; description?: string | null }) =>
   api.post('/skills', data);
+export const updateSkill = (id: number, data: { skill_name: string; category: string; description?: string | null }) =>
+  api.put<Skill>(`/skills/${id}`, data);
+export const deleteSkill = (id: number) =>
+  api.delete(`/skills/${id}`);
 
 // Assign skill
 export const assignSkill = (data: AssignSkillPayload) =>
   api.post('/assign-skill', data);
 
 // Skill Gap & Recommendations
-export const calculateSkillGap = (data: { skill_name: string; required_count: number }) =>
+export const calculateSkillGap = (data: { skill_name: string; required_count: number; department?: string | null; team_name?: string | null }) =>
   api.post('/skill-gap', data);
 
 export const getRecommendation = (skillName: string, requiredCount: number) =>
-  api.get(`/recommendation/${skillName}`, { params: { required_count: requiredCount } });
+  api.get<StrategicRecommendation>(`/recommendation/${skillName}`, { params: { required_count: requiredCount } });
+
+export const getSkillGapOverview = () =>
+  api.get<SkillGapOverviewResponse>('/analytics/skill-gap-overview');
+
+export const getUpskillingRecommendations = () =>
+  api.get<UpskillingRecommendationsResponse>('/analytics/upskilling-recommendations');
 
 // Forecast
 export const getForecast = (skillName: string) =>
@@ -173,6 +221,8 @@ export interface CreateEmployeeFromResumeResponse {
   status: string;
   message: string;
   employee_id: number;
+  employee_code?: string;
+  email?: string;
   assigned_skills: number;
 }
 
@@ -186,10 +236,16 @@ export const uploadResume = (file: File) => {
 
 export const createEmployeeFromResume = (data: {
   name: string;
+  email?: string;
   department: string;
   role: string;
   experience_years: number;
   proficiency_level: number;
+  employee_code?: string;
+  join_date?: string | null;
+  manager?: string | null;
+  performance_score?: number;
+  team_name?: string | null;
   skill_ids: number[];
 }) =>
   api.post<CreateEmployeeFromResumeResponse>('/create-employee-from-resume', data);
@@ -211,5 +267,33 @@ export interface JDParseResponse {
 
 export const parseJobDescription = (jd_text: string) =>
   api.post<JDParseResponse>('/parse-jd', { jd_text });
+
+export const downloadSkillGapReport = (format: ReportFormat) =>
+  api.get('/reports/skill-gap', {
+    params: { export_format: format },
+    responseType: 'blob',
+  });
+
+export const downloadEmployeeSkillReport = (format: ReportFormat) =>
+  api.get('/reports/employee-skills', {
+    params: { export_format: format },
+    responseType: 'blob',
+  });
+
+export const downloadForecastReport = (
+  skillName: string,
+  monthsAhead: number,
+  scenario: 'conservative' | 'balanced' | 'aggressive',
+  format: ReportFormat,
+) =>
+  api.get('/reports/forecast', {
+    params: {
+      skill_name: skillName,
+      months_ahead: monthsAhead,
+      scenario,
+      export_format: format,
+    },
+    responseType: 'blob',
+  });
 
 export default api;
