@@ -1,36 +1,4 @@
-# Python
-env/
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.egg-info/
+node_modules/
+.env
 dist/
 build/
-
-# ML Models
-backend/models/
-*.pkl
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
