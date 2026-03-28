@@ -14,6 +14,33 @@ interface FormErrors {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const getApiErrorMessage = (error: any, fallback: string) => {
+  if (error?.code === 'ECONNABORTED') {
+    return 'Request timed out. Please try again.';
+  }
+  if (!error?.response) {
+    return 'Cannot connect to backend API at http://127.0.0.1:8000. Please start backend server.';
+  }
+
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim().length > 0) {
+    return detail;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const firstError = detail[0];
+    if (typeof firstError?.msg === 'string' && firstError.msg.trim().length > 0) {
+      return firstError.msg;
+    }
+  }
+  if (typeof error?.response?.data?.message === 'string' && error.response.data.message.trim().length > 0) {
+    return error.response.data.message;
+  }
+  if (typeof error?.message === 'string' && error.message.trim().length > 0) {
+    return `${fallback} (${error.message})`;
+  }
+  return fallback;
+};
+
 export default function Signup() {
   const navigate = useNavigate();
 
@@ -37,6 +64,12 @@ export default function Signup() {
 
     if (password.length < 8) {
       nextErrors.password = 'Password must be at least 8 characters';
+    } else if (!/[A-Z]/.test(password)) {
+      nextErrors.password = 'Password must contain at least one uppercase letter';
+    } else if (!/[a-z]/.test(password)) {
+      nextErrors.password = 'Password must contain at least one lowercase letter';
+    } else if (!/\d/.test(password)) {
+      nextErrors.password = 'Password must contain at least one digit';
     }
 
     if (password !== confirmPassword) {
@@ -67,8 +100,21 @@ export default function Signup() {
       toast.success('Account created successfully. Please sign in.');
       navigate('/login');
     } catch (error: any) {
-      const detail = error?.response?.data?.detail;
-      const message = typeof detail === 'string' ? detail : 'Failed to create account';
+      console.error('Signup failed:', error);
+      const message = getApiErrorMessage(error, 'Failed to create account');
+      const normalizedMessage = message.toLowerCase();
+
+      if (
+        error?.response?.status === 400 &&
+        (normalizedMessage.includes('already exists') || normalizedMessage.includes('already registered'))
+      ) {
+        const existingAccountMessage = 'Account already exists. Please sign in with this email.';
+        setErrors({ form: existingAccountMessage });
+        toast.error(existingAccountMessage);
+        navigate('/login');
+        return;
+      }
+
       setErrors({ form: message });
       toast.error(message);
     } finally {
@@ -123,7 +169,7 @@ export default function Signup() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 8 characters"
+                placeholder="8+ chars, upper/lowercase, number"
                 className="form-input"
               />
               {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password}</p>}

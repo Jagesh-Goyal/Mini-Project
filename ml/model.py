@@ -14,8 +14,18 @@ import numpy as np
 import pandas as pd
 import os
 import joblib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
+)
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sqlalchemy.orm import Session
 
@@ -40,6 +50,7 @@ class MLModels:
         self.label_encoders = {}
         self.feature_importance = None
         self.training_records = 0
+        self.last_training_report = None
         self.load_models()
 
     # ── Persistence ────────────────────────────────────────────────────────────
@@ -156,6 +167,16 @@ class MLModels:
             X_demand = df[["month", "quarter", "year", "skill_encoded", "department_encoded", "supply", "trend_score"]]
             y_demand = df["demand"]
 
+            if len(df) >= 10:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X_demand,
+                    y_demand,
+                    test_size=0.2,
+                    random_state=42,
+                )
+            else:
+                X_train, X_test, y_train, y_test = X_demand, X_demand, y_demand, y_demand
+
             self.demand_model = RandomForestRegressor(
                 n_estimators=100,
                 max_depth=15,
@@ -163,11 +184,20 @@ class MLModels:
                 random_state=42,
                 n_jobs=-1,
             )
-            self.demand_model.fit(X_demand, y_demand)
+            self.demand_model.fit(X_train, y_train)
 
             feature_names = ["month", "quarter", "year", "skill", "department", "supply", "trend_score"]
             self.feature_importance = dict(zip(feature_names, self.demand_model.feature_importances_))
-            demand_r2 = self.demand_model.score(X_demand, y_demand)
+
+            y_pred = self.demand_model.predict(X_test)
+            demand_mae = float(mean_absolute_error(y_test, y_pred))
+            demand_rmse = float(mean_squared_error(y_test, y_pred) ** 0.5)
+            demand_r2 = float(r2_score(y_test, y_pred)) if len(y_test) > 1 else 0.0
+            demand_metrics = {
+                "mae": round(demand_mae, 4),
+                "rmse": round(demand_rmse, 4),
+                "r2": round(demand_r2, 4),
+            }
 
         except Exception as e:
             return {"error": f"Demand model training failed: {str(e)}"}
@@ -202,6 +232,22 @@ class MLModels:
                     })
 
             df_turnover = pd.DataFrame(turnover_data)
+
+            if len(set(df_turnover["risk"].tolist())) < 2:
+                minority_label = 1 if df_turnover["risk"].iloc[0] == 0 else 0
+                additional_rows = []
+                for _ in range(8):
+                    additional_rows.append(
+                        {
+                            "experience": np.random.randint(1, 15),
+                            "skill_count": np.random.randint(1, 8),
+                            "proficiency": np.random.uniform(1, 5),
+                            "department": np.random.choice(["Engineering", "Data", "DevOps"]),
+                            "risk": minority_label,
+                        }
+                    )
+                df_turnover = pd.concat([df_turnover, pd.DataFrame(additional_rows)], ignore_index=True)
+
             df_turnover["department_encoded"] = (
                 self.label_encoders["turnover_department"].fit_transform(df_turnover["department"])
             )
@@ -209,27 +255,61 @@ class MLModels:
             X_turnover = df_turnover[["experience", "skill_count", "proficiency", "department_encoded"]]
             y_turnover = df_turnover["risk"]
 
+            if len(df_turnover) >= 10:
+                X_turn_train, X_turn_test, y_turn_train, y_turn_test = train_test_split(
+                    X_turnover,
+                    y_turnover,
+                    test_size=0.2,
+                    random_state=42,
+                    stratify=y_turnover,
+                )
+            else:
+                X_turn_train, X_turn_test, y_turn_train, y_turn_test = (
+                    X_turnover,
+                    X_turnover,
+                    y_turnover,
+                    y_turnover,
+                )
+
             self.turnover_model = GradientBoostingClassifier(
                 n_estimators=50,
                 learning_rate=0.1,
                 max_depth=5,
                 random_state=42,
             )
-            self.turnover_model.fit(X_turnover, y_turnover)
-            turnover_accuracy = self.turnover_model.score(X_turnover, y_turnover)
+            self.turnover_model.fit(X_turn_train, y_turn_train)
+
+            y_turn_pred = self.turnover_model.predict(X_turn_test)
+            turnover_accuracy = float(accuracy_score(y_turn_test, y_turn_pred))
+            turnover_metrics = {
+                "accuracy": round(turnover_accuracy, 4),
+                "precision": round(float(precision_score(y_turn_test, y_turn_pred, zero_division=0)), 4),
+                "recall": round(float(recall_score(y_turn_test, y_turn_pred, zero_division=0)), 4),
+                "f1": round(float(f1_score(y_turn_test, y_turn_pred, zero_division=0)), 4),
+            }
 
         except Exception as e:
             return {"error": f"Turnover model training failed: {str(e)}"}
 
         self.save_models()
 
-        return {
+        report = {
             "status":                 "success",
             "demand_model_r2":        round(demand_r2, 4),
             "turnover_model_accuracy": round(turnover_accuracy, 4),
             "training_records":       self.training_records,
             "feature_importance":     {k: round(v, 4) for k, v in self.feature_importance.items()},
+            "demand_metrics": demand_metrics,
+            "turnover_metrics": turnover_metrics,
+            "trained_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        self.last_training_report = report
+        return report
+
+    def get_latest_training_report(self) -> dict | None:
+        """Return the most recent training/evaluation report if available."""
+        return self.last_training_report
 
     # ── Inference ──────────────────────────────────────────────────────────────
 

@@ -29,6 +29,23 @@ interface AppState {
   addSkill: (data: { skill_name: string; category: string; description?: string | null }) => Promise<boolean>;
 }
 
+const extractListData = <T>(payload: unknown): T[] => {
+  if (Array.isArray(payload)) {
+    return payload as T[];
+  }
+
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data?: unknown }).data)
+  ) {
+    return (payload as { data: T[] }).data;
+  }
+
+  return [];
+};
+
 export const useStore = create<AppState>((set, get) => ({
   employees: [],
   skills: [],
@@ -46,7 +63,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ loadingEmployees: true });
     try {
       const res = await api.getEmployees();
-      set({ employees: res.data, loadingEmployees: false });
+      set({ employees: extractListData<Employee>(res.data), loadingEmployees: false });
     } catch {
       toast.error('Failed to fetch employees');
       set({ loadingEmployees: false });
@@ -57,7 +74,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ loadingSkills: true });
     try {
       const res = await api.getSkills();
-      set({ skills: res.data, loadingSkills: false });
+      set({ skills: extractListData<Skill>(res.data), loadingSkills: false });
     } catch {
       toast.error('Failed to fetch skills');
       set({ loadingSkills: false });

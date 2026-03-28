@@ -143,6 +143,11 @@ export default function JDParser() {
                   ) : (
                     <p className="text-xs text-red-400 mt-0.5">Not tracked in your skill database</p>
                   )}
+                  {typeof skill.confidence_score === 'number' && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      NLP confidence: {(skill.confidence_score * 100).toFixed(0)}%
+                    </p>
+                  )}
                 </div>
                 {skill.in_database && (
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${

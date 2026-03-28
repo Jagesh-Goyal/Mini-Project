@@ -155,6 +155,36 @@ export default function Recommendations() {
             </div>
           </div>
 
+          {result.decision_scores && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <div className="glass-card p-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Hire Pressure</p>
+                <p className="text-2xl font-bold text-rose-300 mt-2">{result.decision_scores.hire_pressure}</p>
+              </div>
+              <div className="glass-card p-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Upskill Fit</p>
+                <p className="text-2xl font-bold text-cyan-300 mt-2">{result.decision_scores.upskill_fit}</p>
+              </div>
+              <div className="glass-card p-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Transfer Readiness</p>
+                <p className="text-2xl font-bold text-amber-300 mt-2">{result.decision_scores.transfer_readiness}</p>
+              </div>
+            </div>
+          )}
+
+          {result.decision_rationale && result.decision_rationale.length > 0 && (
+            <div className="glass-card p-4 mt-4">
+              <h3 className="text-white font-semibold mb-2">Decision Rationale</h3>
+              <ul className="space-y-1">
+                {result.decision_rationale.map((item, index) => (
+                  <li key={`${item}-${index}`} className="text-sm text-slate-300 list-disc ml-4">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-6">
             <div className="glass-card p-4">
               <h3 className="text-white font-semibold mb-3">Internal Transfer Candidates</h3>

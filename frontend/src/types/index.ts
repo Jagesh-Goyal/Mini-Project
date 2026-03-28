@@ -194,6 +194,47 @@ export interface StrategicRecommendation {
   internal_transfer_candidates: TransferRecommendationCandidate[];
   upskill_candidates: UpskillRecommendationCandidate[];
   recommended_actions: Array<string | null>;
+  decision_scores?: {
+    hire_pressure: number;
+    upskill_fit: number;
+    transfer_readiness: number;
+  };
+  decision_rationale?: string[];
 }
 
 export type ReportFormat = 'csv' | 'xlsx' | 'pdf';
+
+export interface HiringTrendRow {
+  month: string;
+  hires: number;
+  running_total: number;
+}
+
+export interface HiringTrendsResponse {
+  generated_at: string;
+  months: number;
+  total_hires: number;
+  trends: HiringTrendRow[];
+}
+
+export interface AdvisorActionCard {
+  title: string;
+  priority: RiskLevel;
+  action: string;
+}
+
+export interface WorkforceAdvisorResponse {
+  mode: 'llm' | 'fallback';
+  query: string;
+  department: string | null;
+  scenario: 'conservative' | 'balanced' | 'aggressive';
+  answer: string;
+  action_cards: AdvisorActionCard[];
+  follow_up_questions: string[];
+  kpis: {
+    employees: number;
+    critical_gap_count: number;
+    medium_gap_count: number;
+  };
+  snapshot_generated_at: string;
+}

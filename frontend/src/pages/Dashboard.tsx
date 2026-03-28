@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
 import * as api from '@/lib/api';
 import type {
+  HiringTrendsResponse,
   RiskLevel,
   SkillHeatmapResponse,
   WorkforceRiskResponse,
@@ -67,24 +70,31 @@ export default function Dashboard() {
 
   const [workforceRiskData, setWorkforceRiskData] = useState<WorkforceRiskResponse | null>(null);
   const [skillHeatmapData, setSkillHeatmapData] = useState<SkillHeatmapResponse | null>(null);
+  const [hiringTrendsData, setHiringTrendsData] = useState<HiringTrendsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const employeeList = Array.isArray(employees) ? employees : [];
+  const skillList = Array.isArray(skills) ? skills : [];
+  const skillDistributionList = Array.isArray(skillDistribution) ? skillDistribution : [];
 
   useEffect(() => {
     fetchEmployees();
     fetchSkills();
     fetchSkillDistribution();
-    fetchAnalytics();
+    void fetchAnalytics();
   }, []);
 
   const fetchAnalytics = async () => {
     setLoading(true);
     try {
-      const [risk, heatmap] = await Promise.all([
+      const [risk, heatmap, hiringTrends] = await Promise.all([
         api.getWorkforceRiskAnalysis(),
         api.getSkillHeatmap(),
+        api.getHiringTrends(12),
       ]);
       setWorkforceRiskData(risk.data);
       setSkillHeatmapData(heatmap.data);
+      setHiringTrendsData(hiringTrends.data);
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
     } finally {
@@ -92,8 +102,25 @@ export default function Dashboard() {
     }
   };
 
+  const refreshAllData = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([
+        fetchEmployees(),
+        fetchSkills(),
+        fetchSkillDistribution(),
+        fetchAnalytics(),
+      ]);
+      toast.success('Dashboard refreshed');
+    } catch {
+      toast.error('Failed to refresh dashboard');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const departmentData = Object.values(
-    employees.reduce<Record<string, { department: string; count: number }>>((acc, employee) => {
+    employeeList.reduce<Record<string, { department: string; count: number }>>((acc, employee) => {
       const key = employee.department || 'Unknown';
       if (!acc[key]) {
         acc[key] = { department: key, count: 0 };
@@ -103,19 +130,19 @@ export default function Dashboard() {
     }, {})
   );
 
-  const proficiencyData = skillDistribution.map((skill) => ({
+  const proficiencyData = skillDistributionList.map((skill) => ({
     level_name: skill.skill_name,
     count: skill.employee_count,
     status: 'ok',
   }));
 
-  const categoryData = skillDistribution.map((skill) => ({
+  const categoryData = skillDistributionList.map((skill) => ({
     category: skill.skill_name.split('_')[0] || skill.skill_name,
     total_assignments: skill.employee_count,
     status: 'ok',
   }));
 
-  const experienceData = employees.reduce<Record<string, { experience_range: string; count: number }>>((acc, emp) => {
+  const experienceData = employeeList.reduce<Record<string, { experience_range: string; count: number }>>((acc, emp) => {
     const range = emp.year_exp <= 2 ? '0-2 years' : emp.year_exp <= 5 ? '3-5 years' : '5+ years';
     if (!acc[range]) {
       acc[range] = { experience_range: range, count: 0 };
@@ -318,10 +345,22 @@ export default function Dashboard() {
             <p className="text-base font-semibold text-white">{riskWatch.summary}</p>
           </div>
         </div>
-        <span className={`risk-pill ${riskPillClassByLevel[riskWatch.level]}`}>
-          <span className="risk-dot" />
-          {riskWatch.level}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`risk-pill ${riskPillClassByLevel[riskWatch.level]}`}>
+            <span className="risk-dot" />
+            {riskWatch.level}
+          </span>
+          <button
+            type="button"
+            onClick={() => void refreshAllData()}
+            className="btn-secondary px-3 py-2"
+            disabled={isLoading}
+            title="Refresh dashboard data"
+          >
+            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+            <span className="text-xs">Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* AI Workforce Insights */}
@@ -354,11 +393,12 @@ export default function Dashboard() {
             <span className="text-xl">⚠️</span>
             <h2 className="text-lg font-semibold text-white">Top Skill Gaps</h2>
           </div>
+          <p className="text-xs text-slate-400 mb-3">Highest-impact shortages ranked by gap and required coverage.</p>
 
           {isLoading ? (
-            <div className="h-56 flex items-center justify-center text-slate-400">Loading...</div>
+              <div className="h-56 rounded-xl border border-slate-700/60 skeleton" />
           ) : topSkillGaps.length === 0 ? (
-            <div className="h-56 flex items-center justify-center text-slate-400">No gap data available</div>
+              <div className="h-56 flex items-center justify-center text-slate-400">No skill gap data yet.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px]">
@@ -398,9 +438,10 @@ export default function Dashboard() {
             <span className="text-xl">📈</span>
             <h2 className="text-lg font-semibold text-white">Future Skill Demand Preview</h2>
           </div>
+          <p className="text-xs text-slate-400 mb-3">Expected growth trend by strategic domain from current workforce signals.</p>
 
           {isLoading ? (
-            <div className="h-64 flex items-center justify-center text-slate-400">Loading...</div>
+              <div className="h-64 rounded-xl border border-slate-700/60 skeleton" />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -456,6 +497,50 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className="glass-panel p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xl">📅</span>
+          <h2 className="text-lg font-semibold text-white">Hiring Trend (Last 12 Months)</h2>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">Recent hiring momentum and cumulative growth trajectory.</p>
+
+        {!hiringTrendsData || hiringTrendsData.trends.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-slate-400">No hiring trend data available</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-700 text-slate-400">
+                  <th className="text-left py-2">Month</th>
+                  <th className="text-right py-2">Hires</th>
+                  <th className="text-right py-2">Running Total</th>
+                  <th className="text-left py-2">Trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hiringTrendsData.trends.slice(-8).map((item) => {
+                  const maxHires = Math.max(...hiringTrendsData.trends.map((trend) => trend.hires), 1);
+                  const width = Math.max(6, Math.round((item.hires / maxHires) * 100));
+
+                  return (
+                    <tr key={item.month} className="border-b border-slate-700/40 hover:bg-cyan-500/8">
+                      <td className="py-2 text-white">{item.month}</td>
+                      <td className="py-2 text-right text-cyan-300 font-semibold">{item.hires}</td>
+                      <td className="py-2 text-right text-slate-200">{item.running_total}</td>
+                      <td className="py-2">
+                        <div className="w-28 h-2 rounded-full bg-slate-700 overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-cyan-400 to-cyan-300" style={{ width: `${width}%` }} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
         <div className="glass-panel p-5">
@@ -465,7 +550,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-slate-400">Total Employees</p>
-              <p className="text-2xl font-bold text-white">{employees.length}</p>
+              <p className="text-2xl font-bold text-white">{employeeList.length}</p>
             </div>
           </div>
         </div>
@@ -477,7 +562,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-slate-400">Total Skills</p>
-              <p className="text-2xl font-bold text-white">{skills.length}</p>
+              <p className="text-2xl font-bold text-white">{skillList.length}</p>
             </div>
           </div>
         </div>
@@ -490,7 +575,7 @@ export default function Dashboard() {
             <div>
               <p className="text-sm text-slate-400">Skill Assignments</p>
               <p className="text-2xl font-bold text-white">
-                {skillDistribution.reduce((sum, s) => sum + s.employee_count, 0)}
+                {skillDistributionList.reduce((sum, s) => sum + s.employee_count, 0)}
               </p>
             </div>
           </div>
@@ -515,18 +600,18 @@ export default function Dashboard() {
         <div className="glass-panel p-5">
           <h3 className="text-lg font-semibold text-white mb-4">Skill Distribution</h3>
           {isLoading ? (
-            <div className="h-64 flex items-center justify-center text-slate-400">Loading...</div>
-          ) : skillDistribution.length === 0 ? (
+            <div className="h-64 rounded-xl border border-slate-700/60 skeleton" />
+          ) : skillDistributionList.length === 0 ? (
             <div className="h-64 flex items-center justify-center text-slate-400">No data</div>
           ) : (
             <div className="space-y-2">
-              {skillDistribution.map((skill, i) => (
+              {skillDistributionList.map((skill, i) => (
                 <div key={skill.skill_name} className="flex items-center gap-3">
                   <span className="w-28 text-sm text-slate-300 truncate">{skill.skill_name}</span>
                   <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className={`h-full ${['bg-cyan-500', 'bg-teal-500', 'bg-green-500', 'bg-amber-500', 'bg-orange-500', 'bg-red-500'][i % 6]}`}
-                      style={{ width: `${Math.min((skill.employee_count / Math.max(1, Math.max(...skillDistribution.map(s => s.employee_count)))) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((skill.employee_count / Math.max(1, Math.max(...skillDistributionList.map(s => s.employee_count)))) * 100, 100)}%` }}
                     />
                   </div>
                   <span className="text-sm text-white font-semibold w-8 text-right">{skill.employee_count}</span>
@@ -540,7 +625,7 @@ export default function Dashboard() {
         <div className="glass-panel p-5">
           <h3 className="text-lg font-semibold text-white mb-4">Proficiency Levels</h3>
           {isLoading ? (
-            <div className="h-64 flex items-center justify-center text-slate-400">Loading...</div>
+            <div className="h-64 rounded-xl border border-slate-700/60 skeleton" />
           ) : proficiencyData.length === 0 ? (
             <div className="h-64 flex items-center justify-center text-slate-400">No data</div>
           ) : (
@@ -571,7 +656,7 @@ export default function Dashboard() {
       <div className="glass-panel p-5">
         <h3 className="text-lg font-semibold text-white mb-4">Skills by Category</h3>
         {isLoading ? (
-          <div className="h-64 flex items-center justify-center text-slate-400">Loading...</div>
+          <div className="h-64 rounded-xl border border-slate-700/60 skeleton" />
         ) : categoryData.length === 0 ? (
           <div className="h-64 flex items-center justify-center text-slate-400">No data</div>
         ) : (
@@ -610,7 +695,7 @@ export default function Dashboard() {
         <div className="glass-panel p-5">
           <h3 className="text-lg font-semibold text-white mb-4">Experience Distribution</h3>
           {isLoading ? (
-            <div className="h-64 flex items-center justify-center text-slate-400">Loading...</div>
+            <div className="h-64 rounded-xl border border-slate-700/60 skeleton" />
           ) : experienceDataArray.length === 0 ? (
             <div className="h-64 flex items-center justify-center text-slate-400">No data</div>
           ) : (
@@ -637,7 +722,7 @@ export default function Dashboard() {
         <div className="glass-panel p-5">
           <h3 className="text-lg font-semibold text-white mb-4">Employees by Department</h3>
           {loadingEmployees ? (
-            <div className="h-64 flex items-center justify-center text-slate-400">Loading...</div>
+            <div className="h-64 rounded-xl border border-slate-700/60 skeleton" />
           ) : departmentData.length === 0 ? (
             <div className="h-64 flex items-center justify-center text-slate-400">No data</div>
           ) : (
@@ -661,7 +746,7 @@ export default function Dashboard() {
         <h3 className="text-lg font-semibold text-white mb-4">Recent Employees</h3>
         {loadingEmployees ? (
           <div className="text-slate-400">Loading...</div>
-        ) : employees.length === 0 ? (
+        ) : employeeList.length === 0 ? (
           <div className="text-slate-400">No employees yet</div>
         ) : (
           <div className="overflow-x-auto">
@@ -676,7 +761,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {employees.slice(-5).reverse().map((emp) => (
+                {employeeList.slice(-5).reverse().map((emp) => (
                   <tr key={emp.id} className="border-b border-slate-700/50 text-sm hover:bg-cyan-500/8 transition">
                     <td className="py-3 text-white font-medium">{emp.name}</td>
                     <td className="py-3 text-slate-300">{emp.department}</td>
@@ -688,7 +773,7 @@ export default function Dashboard() {
                           type="button"
                           className="row-action-btn text-lg"
                           title="View profile"
-                          onClick={() => alert(`Opened profile for ${emp.name}`)}
+                          onClick={() => toast.success(`Opened profile for ${emp.name}`)}
                         >
                           👁️
                         </button>
@@ -696,7 +781,7 @@ export default function Dashboard() {
                           type="button"
                           className="row-action-btn text-lg"
                           title="Nudge action"
-                          onClick={() => alert(`Nudge sent to ${emp.name}`)}
+                          onClick={() => toast.success(`Nudge sent to ${emp.name}`)}
                         >
                           ✨
                         </button>

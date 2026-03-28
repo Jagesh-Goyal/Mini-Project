@@ -12,12 +12,40 @@ interface FormErrors {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const getApiErrorMessage = (error: any, fallback: string) => {
+  if (error?.code === 'ECONNABORTED') {
+    return 'Request timed out. Please try again.';
+  }
+  if (!error?.response) {
+    return 'Cannot connect to backend API at http://127.0.0.1:8000. Please start backend server.';
+  }
+
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim().length > 0) {
+    return detail;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const firstError = detail[0];
+    if (typeof firstError?.msg === 'string' && firstError.msg.trim().length > 0) {
+      return firstError.msg;
+    }
+  }
+  if (typeof error?.response?.data?.message === 'string' && error.response.data.message.trim().length > 0) {
+    return error.response.data.message;
+  }
+  if (typeof error?.message === 'string' && error.message.trim().length > 0) {
+    return `${fallback} (${error.message})`;
+  }
+  return fallback;
+};
+
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+  const [showDevCredentialsHint, setShowDevCredentialsHint] = useState(false);
 
   const validate = () => {
     const nextErrors: FormErrors = {};
@@ -46,17 +74,20 @@ export default function Login() {
 
     try {
       const response = await loginApi({ email: email.trim().toLowerCase(), password });
+      setShowDevCredentialsHint(false);
 
       localStorage.setItem('authToken', response.data.access_token);
+      localStorage.setItem('csrfToken', response.data.csrf_token);
       localStorage.setItem('userEmail', response.data.email);
       localStorage.setItem('userName', response.data.name);
       localStorage.setItem('userRole', response.data.role);
       toast.success('Login successful!');
       navigate('/');
     } catch (error: any) {
-      const detail = error?.response?.data?.detail;
-      const message = typeof detail === 'string' ? detail : 'Invalid email or password';
+      console.error('Login failed:', error);
+      const message = getApiErrorMessage(error, 'Invalid email or password');
       setErrors({ form: message });
+      setShowDevCredentialsHint(error?.response?.status === 401);
       toast.error(message);
     } finally {
       setLoading(false);
@@ -111,6 +142,14 @@ export default function Login() {
             {errors.form && (
               <div className="rounded-lg border border-red-700 bg-red-900/20 px-3 py-2 text-sm text-red-300">
                 {errors.form}
+              </div>
+            )}
+
+            {showDevCredentialsHint && (
+              <div className="rounded-lg border border-blue-800 bg-blue-950/30 px-3 py-2 text-sm text-blue-200">
+                <p className="font-medium">Dev login credentials</p>
+                <p className="mt-1">Email: admin@dakshtra.com</p>
+                <p>Password: admin123</p>
               </div>
             )}
 

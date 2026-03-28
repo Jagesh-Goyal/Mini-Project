@@ -13,11 +13,14 @@ import type {
   TrainingHistoryEntry,
   UpskillingRecommendationsResponse,
   WorkforceRiskResponse,
+  WorkforceAdvisorResponse,
+  HiringTrendsResponse,
   ReportFormat,
 } from '@/types';
 
-const BASE_URL = 'http://127.0.0.1:8000';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
 const AUTH_TOKEN_KEY = 'authToken';
+const CSRF_TOKEN_KEY = 'csrfToken';
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -28,9 +31,17 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const csrfToken = localStorage.getItem(CSRF_TOKEN_KEY);
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  const method = (config.method ?? 'get').toLowerCase();
+  const requestPath = config.url ?? '';
+  const isAuthRoute = requestPath.startsWith('/auth/');
+  if (csrfToken && !isAuthRoute && ['post', 'put', 'patch', 'delete'].includes(method)) {
+    config.headers['X-CSRF-Token'] = csrfToken;
   }
 
   return config;
@@ -42,6 +53,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(CSRF_TOKEN_KEY);
       localStorage.removeItem('userEmail');
       localStorage.removeItem('userName');
       localStorage.removeItem('userRole');
@@ -67,6 +79,7 @@ export interface LoginResponse {
   email: string;
   name: string;
   role: string;
+  csrf_token: string;
 }
 
 export interface SignUpPayload {
@@ -206,6 +219,9 @@ export const getTurnoverRisk = (employeeId: number) =>
 export interface ResumeMappedSkill {
   skill_name: string;
   skill_id: number;
+  confidence_score?: number;
+  mentions?: number;
+  evidence?: string[];
 }
 
 export interface ResumeExtractionResult {
@@ -213,6 +229,13 @@ export interface ResumeExtractionResult {
   message: string;
   extracted_skills: string[];
   mapped_skills: ResumeMappedSkill[];
+  skill_intelligence?: Array<{
+    skill_name: string;
+    confidence_score: number;
+    mentions: number;
+    aliases_detected: string[];
+    evidence: string[];
+  }>;
   experience_years: number;
   name: string;
 }
@@ -256,6 +279,8 @@ export interface JDSkillAnalysis {
   skill_id: number | null;
   current_count: number;
   in_database: boolean;
+  confidence_score?: number;
+  evidence?: string[];
 }
 
 export interface JDParseResponse {
@@ -263,10 +288,29 @@ export interface JDParseResponse {
   total_skills_found: number;
   total_matched_in_db: number;
   skill_analysis: JDSkillAnalysis[];
+  skill_intelligence?: Array<{
+    skill_name: string;
+    confidence_score: number;
+    mentions: number;
+    aliases_detected: string[];
+  }>;
 }
 
 export const parseJobDescription = (jd_text: string) =>
   api.post<JDParseResponse>('/parse-jd', { jd_text });
+
+export const getHiringTrends = (months: number = 12) =>
+  api.get<HiringTrendsResponse>('/analytics/hiring-trends', { params: { months } });
+
+export interface WorkforceAdvisorPayload {
+  query: string;
+  department?: string;
+  scenario?: 'conservative' | 'balanced' | 'aggressive';
+  use_llm?: boolean;
+}
+
+export const queryWorkforceAdvisor = (payload: WorkforceAdvisorPayload) =>
+  api.post<WorkforceAdvisorResponse>('/advisor/query', payload);
 
 export const downloadSkillGapReport = (format: ReportFormat) =>
   api.get('/reports/skill-gap', {

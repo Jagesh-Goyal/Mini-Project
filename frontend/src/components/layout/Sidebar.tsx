@@ -11,6 +11,7 @@ import {
   ScanSearch,
   FileSearch,
   Grid2x2,
+  Bot,
   X,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
@@ -26,6 +27,7 @@ const navItems = [
   { to: '/resume-parser', icon: ScanSearch, label: 'Resume Parser' },
   { to: '/jd-parser', icon: FileSearch, label: 'JD Parser' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
+  { to: '/advisor', icon: Bot, label: 'AI Advisor' },
   { to: '/reports', icon: FileSpreadsheet, label: 'Reports' },
 ];
 
@@ -43,7 +45,7 @@ export default function Sidebar() {
 
       <aside
         className={`fixed top-0 left-0 z-50 flex h-full w-72 flex-col
-          border-r border-slate-700/70 bg-slate-900/85 backdrop-blur-md
+          border-r border-slate-700/70 bg-slate-900/88 backdrop-blur-md
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
           lg:translate-x-0 lg:static lg:z-30
           transition-transform duration-300
@@ -68,20 +70,23 @@ export default function Sidebar() {
         </div>
 
         <nav className="flex-1 space-y-1.5 px-3 py-4">
+          <p className="px-3 pb-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">Navigation</p>
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition
+                `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200
                 ${isActive
-                  ? 'bg-blue-600/90 text-white shadow-sm'
-                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                  ? 'border border-blue-400/40 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-white shadow-[0_4px_18px_rgba(59,130,246,0.15)]'
+                  : 'border border-transparent text-slate-300 hover:border-slate-700/80 hover:bg-slate-800/80 hover:text-white'
                 }`
               }
             >
-              <item.icon size={20} />
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300 transition group-hover:text-white">
+                <item.icon size={18} />
+              </span>
               <span>{item.label}</span>
             </NavLink>
           ))}

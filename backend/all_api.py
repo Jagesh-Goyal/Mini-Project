@@ -2,6 +2,8 @@ import csv
 import base64
 import hashlib
 import hmac
+import json
+import logging
 import os
 import secrets
 from io import BytesIO, StringIO
@@ -9,6 +11,8 @@ from typing import Any
 from datetime import datetime, timedelta, timezone
 
 import pdfplumber
+import requests
+import bcrypt
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
 from fastapi.responses import Response
@@ -19,8 +23,31 @@ from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal
 from ml.model import ml_models
-from backend.model import Employee, EmployeeSkill, Skill, TrainingHistory, User
+from backend.model import (
+    Employee,
+    EmployeeSkill,
+    JobRole,
+    PredictionSnapshot,
+    RecommendationLog,
+    Skill,
+    TrainingHistory,
+    User,
+)
 from ml.nlp_extractor import extract_skills_from_resume
+from backend.security import (
+    rate_limit,
+    auth_limiter,
+    api_limiter,
+    Role,
+    hash_password,
+    verify_password,
+    token_manager,
+    get_current_user,
+    get_current_admin,
+    get_current_hr_or_admin,
+    require_role,
+    require_any_role,
+)
 from backend.schemas import (
     AssignSkillSchema,
     CreateEmployeeFromResumeSchema,
@@ -32,17 +59,28 @@ from backend.schemas import (
     SkillDemandSchema,
     SkillUpdate,
     TokenResponse,
+    TokenRefreshRequest,
+    TokenRefreshResponse,
+    UserProfileResponse,
+    UserUpdateRequest,
     TrainingHistoryCreate,
 )
-from backend.security import rate_limit, auth_limiter, api_limiter, Role
 
 router = APIRouter()
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
-bearer_scheme = HTTPBearer(auto_error=False)
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change_this_jwt_secret_in_production")
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+# Environment variables
+CSRF_HEADER_NAME = "X-CSRF-Token"
+ENFORCE_CSRF = os.getenv("ENFORCE_CSRF", "true").lower() == "true"
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+JOB_POSTING_API_URL = os.getenv("JOB_POSTING_API_URL")
+JOB_POSTING_API_KEY = os.getenv("JOB_POSTING_API_KEY")
+
+logger = logging.getLogger("dakshtra.api")
 
 
 # =============================
@@ -58,73 +96,37 @@ def get_db():
 
 
 # =============================
-# Auth Helpers
+# Auth Helpers (CSRF Token Verification)
 # =============================
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+def verify_csrf_token(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> None:
+    if not ENFORCE_CSRF:
+        return
 
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
 
-def hash_password(password: str) -> str:
-    iterations = 100000
-    salt = secrets.token_bytes(16)
-    password_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    expected_token = current_user.get("csrf")
+    provided_token = request.headers.get(CSRF_HEADER_NAME)
 
-    encoded_salt = base64.b64encode(salt).decode("utf-8")
-    encoded_hash = base64.b64encode(password_hash).decode("utf-8")
-    return f"{iterations}${encoded_salt}${encoded_hash}"
-
-
-def verify_password(password: str, stored_hash: str) -> bool:
-    try:
-        iterations_str, encoded_salt, encoded_hash = stored_hash.split("$", maxsplit=2)
-        iterations = int(iterations_str)
-        salt = base64.b64decode(encoded_salt.encode("utf-8"))
-        expected_hash = base64.b64decode(encoded_hash.encode("utf-8"))
-
-        current_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-        return hmac.compare_digest(current_hash, expected_hash)
-    except (ValueError, TypeError):
-        return False
-
-
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-) -> dict:
-    if credentials is None:
+    if not expected_token or not provided_token:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing CSRF token",
         )
 
-    token = credentials.credentials
-
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        subject = payload.get("sub")
-        if subject is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return payload
-    except JWTError as exc:
+    if not hmac.compare_digest(str(expected_token), str(provided_token)):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid CSRF token",
+        )
 
 
 # Protect all business APIs.
-api_router = APIRouter(tags=["api"], dependencies=[Depends(get_current_user)])
+api_router = APIRouter(tags=["api"], dependencies=[Depends(get_current_user), Depends(verify_csrf_token)])
 
 PROFICIENCY_LABELS = {
     1: "Beginner",
@@ -337,6 +339,511 @@ def _build_gap_overview_scope(label: str, rows: list[dict[str, Any]]) -> dict[st
     }
 
 
+def _calculate_gap_score(skill_name: str, required_count: int, current_count: int) -> dict[str, Any]:
+    gap = max(required_count - current_count, 0)
+    coverage_ratio = round((current_count / required_count), 3) if required_count > 0 else 1.0
+    shortage_ratio = (gap / required_count) if required_count > 0 else (1.0 if gap > 0 else 0.0)
+    strategic_boost = 12 if skill_name in STRATEGIC_SKILLS else 0
+
+    urgency_score = min(
+        100,
+        int(round((shortage_ratio * 65) + (gap * 6) + strategic_boost)),
+    )
+    priority = _risk_level_from_score(urgency_score)
+
+    if gap <= 0:
+        recommendation_hint = "No immediate action needed"
+    elif gap <= 2:
+        recommendation_hint = "Prefer targeted upskilling and internal movement"
+    elif gap <= 5:
+        recommendation_hint = "Combine hiring with upskilling for faster closure"
+    else:
+        recommendation_hint = "Prioritize hiring to reduce execution risk"
+
+    return {
+        "coverage_ratio": coverage_ratio,
+        "shortage_ratio": round(shortage_ratio, 3),
+        "urgency_score": urgency_score,
+        "priority": priority,
+        "recommendation_hint": recommendation_hint,
+    }
+
+
+def _recommendation_decision_breakdown(
+    skill_name: str,
+    gap: int,
+    transfer_pool: int,
+    upskill_pool: int,
+) -> dict[str, Any]:
+    if gap <= 0:
+        return {
+            "scores": {
+                "hire_pressure": 0,
+                "upskill_fit": 0,
+                "transfer_readiness": 0,
+            },
+            "rationale": ["Current supply already meets required demand"],
+        }
+
+    strategic_boost = 15 if skill_name in STRATEGIC_SKILLS else 0
+    hire_pressure = min(100, int((gap * 14) + strategic_boost))
+    upskill_fit = min(100, int(round((upskill_pool / max(gap, 1)) * 75)))
+    transfer_readiness = min(100, int(round((transfer_pool / max(gap, 1)) * 100)))
+
+    rationale = []
+    if hire_pressure >= 70:
+        rationale.append("Demand pressure is high and requires immediate capacity expansion")
+    if upskill_fit >= 60:
+        rationale.append("Internal employees can close part of the gap through focused upskilling")
+    if transfer_readiness >= 60:
+        rationale.append("Existing high-proficiency talent can be internally redeployed")
+    if not rationale:
+        rationale.append("Balanced strategy is recommended due to moderate gap and limited internal coverage")
+
+    return {
+        "scores": {
+            "hire_pressure": hire_pressure,
+            "upskill_fit": upskill_fit,
+            "transfer_readiness": transfer_readiness,
+        },
+        "rationale": rationale,
+    }
+
+
+def _build_hiring_trend_rows(employees: list[Employee], months: int = 12) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    month_buckets: dict[str, int] = {}
+
+    for offset in range(months - 1, -1, -1):
+        serial_month = (now.year * 12 + now.month - 1) - offset
+        year = serial_month // 12
+        month = (serial_month % 12) + 1
+        key = f"{year:04d}-{month:02d}"
+        month_buckets[key] = 0
+
+    for employee in employees:
+        if employee.join_date is None:
+            continue
+        join_key = employee.join_date.strftime("%Y-%m")
+        if join_key in month_buckets:
+            month_buckets[join_key] += 1
+
+    running_total = 0
+    rows: list[dict[str, Any]] = []
+    for month_key, hires in month_buckets.items():
+        running_total += hires
+        rows.append({
+            "month": month_key,
+            "hires": hires,
+            "running_total": running_total,
+        })
+
+    return rows
+
+
+def _build_workforce_snapshot(db: Session, department: str | None = None, scenario: str = "balanced") -> dict[str, Any]:
+    employees_query = db.query(Employee)
+    if department:
+        employees_query = employees_query.filter(func.lower(Employee.department) == department.lower())
+
+    employees = employees_query.all()
+    employee_ids = [employee.id for employee in employees]
+
+    if department:
+        heatmap_rows = _build_skill_heatmap_rows(db, employee_ids)
+    else:
+        heatmap_rows = _build_skill_heatmap_rows(db)
+
+    critical_gaps = [row for row in heatmap_rows if row["status"] == "RED"][:5]
+    medium_gaps = [row for row in heatmap_rows if row["status"] == "YELLOW"][:5]
+
+    role_distribution = (
+        db.query(Employee.role, func.count(Employee.id).label("count"))
+        .group_by(Employee.role)
+        .order_by(func.count(Employee.id).desc())
+        .all()
+    )
+
+    return {
+        "department": department,
+        "scenario": scenario,
+        "employees": len(employees),
+        "critical_gap_count": len([row for row in heatmap_rows if row["status"] == "RED"]),
+        "medium_gap_count": len([row for row in heatmap_rows if row["status"] == "YELLOW"]),
+        "top_critical_gaps": [
+            {
+                "skill": row["skill"],
+                "gap": row["gap"],
+                "required": row["required"],
+                "available": row["available"],
+            }
+            for row in critical_gaps
+        ],
+        "top_medium_gaps": [
+            {
+                "skill": row["skill"],
+                "gap": row["gap"],
+                "required": row["required"],
+                "available": row["available"],
+            }
+            for row in medium_gaps
+        ],
+        "top_roles": [
+            {
+                "role": row.role,
+                "count": int(row.count),
+            }
+            for row in role_distribution[:5]
+        ],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _call_openai_advisor(query: str, snapshot: dict[str, Any]) -> str | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    system_prompt = (
+        "You are an enterprise workforce planning advisor. "
+        "Answer with practical and concise HR actions using provided snapshot only."
+    )
+    user_prompt = (
+        f"Question: {query}\n\n"
+        f"Workforce Snapshot JSON:\n{json.dumps(snapshot, ensure_ascii=False)}\n\n"
+        "Respond in 4-6 bullet points with clear actions, risk rationale, and measurable next steps."
+    )
+
+    try:
+        response = requests.post(
+            f"{OPENAI_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": OPENAI_MODEL,
+                "temperature": 0.2,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+            timeout=12,
+        )
+        response.raise_for_status()
+        data = response.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return None
+        return choices[0].get("message", {}).get("content")
+    except Exception:
+        return None
+
+
+def _fallback_advisor_response(query: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    """
+    Enhanced fallback advisor with HR-domain-specific logic.
+    Provides data-driven recommendations when LLM is unavailable.
+    """
+    normalized_query = query.lower()
+    top_gaps = snapshot.get("top_critical_gaps", [])
+    top_gap_text = ", ".join(f"{item['skill']} ({item['gap']})" for item in top_gaps[:3]) or "No critical gaps"
+    
+    emp_count = snapshot.get("employees", 0)
+    critical_gaps = snapshot.get("critical_gap_count", 0)
+    medium_gaps = snapshot.get("medium_gap_count", 0)
+
+    answer = ""
+    priority = "LOW"
+    recommendations = []
+
+    # Pattern matching for various HR questions
+    if any(word in normalized_query for word in ["gap", "shortage", "vacancy", "filled"]):
+        answer = (
+            f"Current skill gaps: {critical_gaps} critical, {medium_gaps} medium. "
+            f"Top constraints: {top_gap_text}. "
+            "Recommended action: Address critical gaps within 30 days using transfer + upskilling + hiring blend."
+        )
+        priority = "HIGH" if critical_gaps > 0 else "MEDIUM"
+
+    elif any(word in normalized_query for word in ["hire", "hiring", "recruit", "recruitment"]):
+        answer = (
+            f"Hiring priority should focus on: {top_gap_text}. "
+            f"Start with skills having gap ≥ 3 ({critical_gaps} roles). "
+            "Timeline: 2-3 weeks recruitment + 4-week onboarding = 6-7 weeks to productivity. "
+            "Pair hiring with internal transfers for faster gap closure."
+        )
+        priority = "HIGH" if critical_gaps > 0 else "MEDIUM"
+        recommendations = ["Post jobs for critical skills immediately", "Screen internal talent for transfer"]
+
+    elif any(word in normalized_query for word in ["upskill", "training", "learn", "development", "reskill"]):
+        answer = (
+            f"Upskilling targets: {top_gap_text}. "
+            "Select high performers (score > 75) from related roles for 6-8 week intensive training. "
+            "ROI: Most ready in 60 days vs 180+ for external hires. "
+            "Pair 2-3 upskills with targeted hiring for fastest gap closure."
+        )
+        priority = "HIGH" if medium_gaps > 0 else "MEDIUM"
+        recommendations = ["Identify high-performer candidates", "Design 6-8 week training curriculum"]
+
+    elif any(word in normalized_query for word in ["risk", "attrition", "turnover", "dependency", "vulnerable"]):
+        answer = (
+            f"Risk concentration: {top_gap_text} (often single-expert-dependent). "
+            f"Workforce: {emp_count} employees, {critical_gaps} critical roles with <2 qualified staff. "
+            "Mitigation: Cross-train backup for each critical skill within 90 days. "
+            "Monitor monthly attrition and update talent mapping quarterly."
+        )
+        priority = "MEDIUM"
+        recommendations = ["Document critical role owners", "Start cross-training backup candidates"]
+
+    elif any(word in normalized_query for word in ["transfer", "move", "realloc", "internal"]):
+        answer = (
+            f"Internal mobility opportunities: Analyze {emp_count} employees for skill transferability. "
+            f"Target gaps: {top_gap_text}. "
+            "Approach: Map overlapping skills, identify adjacent-role candidates, offer 2-4 week transition training. "
+            "Benefit: Faster deployment (2-3 weeks) vs external hiring (6-7 weeks)."
+        )
+        priority = "MEDIUM"
+        recommendations = ["Identify adjacent-role candidates with 60%+ skill overlap"]
+
+    elif any(word in normalized_query for word in ["budget", "cost", "spend", "investment"]):
+        answer = (
+            f"Workforce investment ROI: {emp_count} employees need {critical_gaps} critical roles filled. "
+            "Cost-benefit: Average hire costs $50K (salary + onboard), internal transfer $5K (training), upskill $3K. "
+            "Recommended allocation: 40% hiring + 35% upskilling + 25% transfers for optimal blend."
+        )
+        priority = "MEDIUM"
+
+    elif any(word in normalized_query for word in ["forecast", "predict", "planning", "pipeline"]):
+        answer = (
+            f"6-month workforce forecast: {emp_count} current employees, {critical_gaps} critical skills to secure. "
+            f"Growth/replacement needs: Top gaps are {top_gap_text}. "
+            "Plan: Hire for critical roles in months 1-2, upskill months 2-4, transfers ongoing. "
+            "Monitor: Revisit forecast quarterly based on business changes."
+        )
+        priority = "MEDIUM"
+
+    elif any(word in normalized_query for word in ["performance", "quality", "metric", "kpi"]):
+        answer = (
+            f"Workforce KPIs: {emp_count} employees, {critical_gaps} critical gaps (target: 0). "
+            "Track: Gap closure rate, time-to-productivity by source (hire/upskill/transfer), attrition rate. "
+            "Next review: Check progress every 30 days, align with business quarterly targets."
+        )
+        priority = "MEDIUM"
+
+    elif any(word in normalized_query for word in ["department", "team", "division"]):
+        dept = snapshot.get("department", "organization")
+        answer = (
+            f"{dept} workforce: ~{emp_count} employees with {critical_gaps} critical skill gaps. "
+            f"Priority skills: {top_gap_text}. "
+            "Action: Conduct department-level skill audit, identify hotspots, coordinate with other teams for transfers."
+        )
+        priority = "MEDIUM"
+
+    else:
+        answer = (
+            f"Current state: {emp_count} employees, {critical_gaps} critical gaps, {medium_gaps} medium gaps. "
+            f"Top constraints: {top_gap_text}. "
+            "Recommended strategy: Use balanced 3-part approach - internal transfers (fastest), upskilling (ROI), hiring (scaling). "
+            "Next steps: Prioritize skills by business impact, launch actions in parallel, track weekly progress."
+        )
+        priority = "MEDIUM"
+        recommendations = ["Review top 3 skill gaps in detail", "Assign owners for each gap"]
+
+    # Build action cards with structured recommendations
+    action_cards = []
+    for item in top_gaps[:3]:
+        gap_size = item["gap"]
+        if gap_size >= 3:
+            action_priority = "HIGH"
+            action_steps = "1. Post job globally (2-3 weeks). 2. Fast-track interviews (1 week). 3. Parallel upskilling internal candidate."
+        elif gap_size >= 2:
+            action_priority = "MEDIUM"
+            action_steps = "1. Identify transfer candidate from adjacent skill. 2. 3-week transition training. 3. Post backup hire if transfer unavailable."
+        else:
+            action_priority = "LOW"
+            action_steps = "1. Schedule upskilling for high performer. 2. 6-week training program. 3. Monitor capability monthly."
+
+        action_cards.append(
+            {
+                "title": f"Address {item['skill']} gap ({gap_size} headcount)",
+                "priority": action_priority,
+                "gap": gap_size,
+                "action": action_steps,
+            }
+        )
+
+    if not action_cards:
+        action_cards.append(
+            {
+                "title": "Maintain readiness",
+                "priority": "LOW",
+                "action": "No critical gaps. Continue monthly monitoring, quarterly role calibration, annual strategic reviews.",
+            }
+        )
+
+    # Context-aware follow-up questions
+    follow_ups = []
+    if critical_gaps > 0:
+        follow_ups.append("Which skill should we prioritize first for hiring/upskilling?")
+    if medium_gaps > 0:
+        follow_ups.append("Can we move internal talent to cover medium-gap roles?")
+    follow_ups.append("What's the business timeline for closing these gaps?")
+    if emp_count < 20:
+        follow_ups.append("Should we consider contractor/freelance support for short-term gaps?")
+
+    follow_up_questions = follow_ups[:4] if follow_ups else [
+        "What's the priority: speed vs cost-efficiency?",
+        "Are there seasonal workforce needs we should plan for?",
+    ]
+
+    return {
+        "answer": answer,
+        "action_cards": action_cards,
+        "follow_up_questions": follow_up_questions,
+        "recommendations": recommendations,
+    }
+
+
+def _publish_job_posting_signal(
+    *,
+    skill_name: str,
+    required_count: int,
+    current_count: int,
+    gap: int,
+    department: str | None = None,
+    source: str = "recommendation_engine",
+) -> dict[str, Any]:
+    """
+    Publish job posting signal to external job-posting service with retry logic.
+    
+    Args:
+        skill_name: Technical skill required
+        required_count: Number of positions needed
+        current_count: Current workforce capacity
+        gap: Gap to fill (required - current)
+        department: Department context
+        source: Signal source (recommendation_engine or manual_trigger)
+    
+    Returns:
+        Integration result with status and metadata
+    """
+    if gap <= 0:
+        return {"status": "skipped", "reason": "no_gap", "message": "No gap identified"}
+
+    if not JOB_POSTING_API_URL:
+        return {
+            "status": "disabled",
+            "reason": "JOB_POSTING_API_URL not configured",
+            "message": "Job posting integration not configured. Set JOB_POSTING_API_URL in environment.",
+        }
+
+    payload = {
+        "source": source,
+        "skill_name": skill_name,
+        "department": department,
+        "required_count": required_count,
+        "current_count": current_count,
+        "gap": gap,
+        "priority": "HIGH" if gap >= 3 else "MEDIUM",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Dakshtra/1.0",
+    }
+    if JOB_POSTING_API_KEY:
+        headers["Authorization"] = f"Bearer {JOB_POSTING_API_KEY}"
+
+    # Retry logic: exponential backoff
+    max_retries = 3
+    retry_delay = 1  # seconds
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            logger.info(
+                f"Publishing job posting signal (attempt {attempt + 1}/{max_retries}): "
+                f"skill={skill_name}, gap={gap}, department={department}"
+            )
+            
+            response = requests.post(
+                JOB_POSTING_API_URL,
+                json=payload,
+                headers=headers,
+                timeout=10,
+            )
+            
+            if response.ok:
+                logger.info(
+                    f"Job posting signal published successfully: "
+                    f"skill={skill_name}, status_code={response.status_code}"
+                )
+                return {
+                    "status": "published",
+                    "http_status": response.status_code,
+                    "message": "Job posting signal sent successfully",
+                    "attempt": attempt + 1,
+                }
+            elif response.status_code >= 500:
+                # Server error - retry
+                last_error = f"Server error {response.status_code}: {response.text[:200]}"
+                logger.warning(f"Server error, will retry: {last_error}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                    continue
+            else:
+                # Client error - don't retry
+                logger.error(
+                    f"Client error {response.status_code}: {response.text[:200]}"
+                )
+                return {
+                    "status": "failed",
+                    "http_status": response.status_code,
+                    "message": f"HTTP {response.status_code}: {response.text[:200]}",
+                    "attempt": attempt + 1,
+                }
+                
+        except requests.Timeout:
+            last_error = "Request timeout"
+            logger.warning(f"Request timeout (attempt {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(retry_delay * (2 ** attempt))
+                continue
+                
+        except requests.ConnectionError as e:
+            last_error = f"Connection error: {str(e)[:100]}"
+            logger.warning(f"Connection error (attempt {attempt + 1}/{max_retries}): {last_error}")
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(retry_delay * (2 ** attempt))
+                continue
+                
+        except Exception as exc:
+            last_error = str(exc)[:100]
+            logger.error(f"Unexpected error publishing job posting signal: {last_error}")
+            return {
+                "status": "failed",
+                "error": last_error,
+                "message": f"Unexpected error: {last_error}",
+                "attempt": attempt + 1,
+            }
+
+    # All retries exhausted
+    logger.error(
+        f"Job posting signal failed after {max_retries} attempts: {last_error}"
+    )
+    return {
+        "status": "failed",
+        "error": last_error,
+        "message": f"Failed after {max_retries} retries: {last_error}",
+        "retries_exhausted": True,
+    }
+
+
 def _dataframe_download_response(filename: str, rows: list[dict[str, Any]], export_format: str, title: str) -> Response:
     if export_format == "csv":
         buffer = StringIO()
@@ -404,9 +911,22 @@ def _dataframe_download_response(filename: str, rows: list[dict[str, Any]], expo
 @auth_router.post("/signup", response_model=SignUpResponse, status_code=status.HTTP_201_CREATED)
 @rate_limit(auth_limiter)
 def signup(request: Request, data: SignUpRequest, db: Session = Depends(get_db)):
-    """Rate limited to 10 requests per minute"""
+    """
+    Register a new user account.
+    Rate limited to 10 requests per minute.
+    
+    Security:
+    - Password: bcrypt hashed with 12 rounds
+    - Default role: employee
+    - Account activation required before login (future)
+    """
     existing_user = db.query(User).filter(User.email == data.email).first()
     if existing_user:
+        if not existing_user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This account has been deactivated. Contact admin.",
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email already exists",
@@ -417,14 +937,17 @@ def signup(request: Request, data: SignUpRequest, db: Session = Depends(get_db))
         email=data.email,
         password_hash=hash_password(data.password),
         role=Role.EMPLOYEE,
+        is_active=True,
     )
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
+    logger.info(f"New user registered: {new_user.email} ({new_user.role})")
+
     return {
-        "message": "Account created successfully",
+        "message": "Account created successfully. Please login with your credentials.",
         "email": new_user.email,
         "name": new_user.name,
     }
@@ -433,45 +956,220 @@ def signup(request: Request, data: SignUpRequest, db: Session = Depends(get_db))
 @auth_router.post("/login", response_model=TokenResponse)
 @rate_limit(auth_limiter)
 def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
-    """Rate limited to 10 requests per minute"""
+    """
+    Login user and return JWT tokens.
+    Rate limited to 10 requests per minute.
+    
+    Returns:
+    - access_token: Short-lived token for API requests (60 min default)
+    - refresh_token: Long-lived token to obtain new access tokens (7 days default)
+    - csrf_token: CSRF protection token for state-changing requests
+    """
     user = db.query(User).filter(User.email == data.email).first()
 
     if not user or not verify_password(data.password, user.password_hash):
+        logger.warning(f"Failed login attempt for email: {data.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
-    access_token = create_access_token(
-        data={"sub": user.email, "role": user.role},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    if not user.is_active:
+        logger.warning(f"Login attempt for deactivated account: {data.email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account has been deactivated",
+        )
+
+    # Update last login timestamp
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
+
+    csrf_token = secrets.token_urlsafe(24)
+
+    # Create access token (short-lived)
+    access_token = token_manager.create_access_token(
+        data={"sub": user.email, "role": user.role, "csrf": csrf_token}
     )
+
+    # Create refresh token (long-lived)
+    refresh_token = token_manager.create_refresh_token(
+        data={"sub": user.email, "role": user.role}
+    )
+
+    logger.info(f"User logged in: {user.email} ({user.role})")
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": token_manager.access_token_expire_minutes * 60,
+        "email": user.email,
+        "name": user.name,
+        "role": Role.normalize(user.role),
+        "csrf_token": csrf_token,
+    }
+
+
+@auth_router.post("/refresh", response_model=TokenRefreshResponse)
+@rate_limit(auth_limiter)
+def refresh_access_token(data: TokenRefreshRequest):
+    """
+    Exchange a refresh token for a new access token.
+    Rate limited to 10 requests per minute.
+    
+    Args:
+        refresh_token: Valid refresh token from login
+        
+    Returns:
+        New access_token with updated expiration
+    """
+    payload = token_manager.verify_token(data.refresh_token, token_type="refresh")
+    
+    # Create new access token
+    access_token = token_manager.create_access_token(
+        data={
+            "sub": payload.get("sub"),
+            "role": payload.get("role"),
+        }
+    )
+
+    logger.info(f"Token refreshed for user: {payload.get('sub')}")
 
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "email": user.email,
-        "name": user.name,
-        "role": Role.normalize(user.role),
+        "expires_in": token_manager.access_token_expire_minutes * 60,
     }
 
 
-@auth_router.get("/me")
+@auth_router.get("/me", response_model=UserProfileResponse)
 def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Get current authenticated user's profile.
+    Requires: Valid JWT access token in Authorization header
+    """
     user = db.query(User).filter(User.email == current_user.get("sub")).first()
 
-    if user is None:
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found or inactive",
+        )
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": Role.normalize(user.role),
+        "is_active": user.is_active,
+        "last_login": user.last_login,
+        "created_at": user.created_at,
+    }
+
+
+@auth_router.post("/verify-token", status_code=status.HTTP_204_NO_CONTENT)
+def verify_token(current_user: dict = Depends(get_current_user)):
+    """
+    Verify that the provided access token is valid.
+    Returns 204 No Content if valid, 401 if invalid.
+    """
+    return None
+
+
+# =============================
+# Admin User Management (Optional - requires admin)
+# =============================
+
+@auth_router.post("/admin/create-user", status_code=status.HTTP_201_CREATED)
+def create_user_as_admin(
+    data: SignUpRequest,
+    admin: dict = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Admin endpoint: Create a new user with specified role.
+    Requires: Admin role
+    
+    Admin can create users with any role (admin, hr_manager, employee).
+    """
+    existing_user = db.query(User).filter(User.email == data.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email already exists",
+        )
+
+    # Parse role from email pattern or use default
+    email_parts = data.email.split("@")[0].lower()
+    if "admin" in email_parts:
+        assigned_role = Role.ADMIN
+    elif "hr" in email_parts or "manager" in email_parts:
+        assigned_role = Role.HR_MANAGER
+    else:
+        assigned_role = Role.EMPLOYEE
+
+    new_user = User(
+        name=data.name,
+        email=data.email,
+        password_hash=hash_password(data.password),
+        role=assigned_role,
+        is_active=True,
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    logger.info(f"Admin {admin['sub']} created user: {new_user.email} ({assigned_role})")
+
+    return {
+        "message": f"User created successfully with role: {Role.label(assigned_role)}",
+        "email": new_user.email,
+        "name": new_user.name,
+        "role": Role.normalize(assigned_role),
+    }
+
+
+@auth_router.patch("/profile", response_model=UserProfileResponse)
+def update_profile(
+    data: UserUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update current user's profile (name and/or password).
+    Requires: Valid JWT access token
+    """
+    user = db.query(User).filter(User.email == current_user.get("sub")).first()
+
+    if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
 
+    if data.name:
+        user.name = data.name
+
+    if data.password:
+        user.password_hash = hash_password(data.password)
+        logger.info(f"User {user.email} updated their password")
+
+    user.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    logger.info(f"User profile updated: {user.email}")
+
     return {
-        "email": user.email,
+        "id": user.id,
         "name": user.name,
-        "role": Role.normalize(current_user.get("role", Role.EMPLOYEE)),
-        "role_label": Role.label(current_user.get("role", Role.EMPLOYEE)),
+        "email": user.email,
+        "role": Role.normalize(user.role),
+        "is_active": user.is_active,
+        "last_login": user.last_login,
+        "created_at": user.created_at,
     }
 
 
@@ -519,9 +1217,27 @@ def add_employee(
 
 
 @api_router.get("/employees")
-def get_all_employees(request: Request, db: Session = Depends(get_db)):
-    employees = db.query(Employee).order_by(Employee.name.asc()).all()
-    return [_serialize_employee(employee) for employee in employees]
+def get_all_employees(
+    request: Request,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum number of records to return"),
+):
+    total_count = db.query(Employee).count()
+    employees = (
+        db.query(Employee)
+        .order_by(Employee.name.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "data": [_serialize_employee(employee) for employee in employees],
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "has_more": (skip + limit) < total_count,
+    }
 
 
 @api_router.get("/employees/{employee_id}/profile")
@@ -708,9 +1424,27 @@ def add_skill(
 
 
 @api_router.get("/skills")
-def get_all_skills(request: Request, db: Session = Depends(get_db)):
-    skills = db.query(Skill).order_by(Skill.category.asc(), Skill.skill_name.asc()).all()
-    return [_serialize_skill(skill) for skill in skills]
+def get_all_skills(
+    request: Request,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum number of records to return"),
+):
+    total_count = db.query(Skill).count()
+    skills = (
+        db.query(Skill)
+        .order_by(Skill.category.asc(), Skill.skill_name.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "data": [_serialize_skill(skill) for skill in skills],
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "has_more": (skip + limit) < total_count,
+    }
 
 
 @api_router.put("/skills/{skill_id}")
@@ -758,6 +1492,109 @@ def delete_skill(
     db.delete(skill)
     db.commit()
     return {"message": f"Skill {skill.skill_name} deleted successfully"}
+
+
+class JobRolePayload(BaseModel):
+    role_name: str = Field(min_length=2, max_length=120)
+    department: str = Field(min_length=2, max_length=100)
+    required_skills: list[str] = Field(default_factory=list)
+    target_headcount: int = Field(default=0, ge=0, le=100000)
+    planning_horizon_months: int = Field(default=6, ge=1, le=36)
+    is_active: bool = True
+
+
+@api_router.get("/job-roles")
+def get_job_roles(request: Request, db: Session = Depends(get_db)):
+    roles = db.query(JobRole).order_by(JobRole.department.asc(), JobRole.role_name.asc()).all()
+    return [
+        {
+            "id": role.id,
+            "role_name": role.role_name,
+            "department": role.department,
+            "required_skills": json.loads(role.required_skills_json or "[]"),
+            "target_headcount": role.target_headcount,
+            "planning_horizon_months": role.planning_horizon_months,
+            "is_active": role.is_active,
+            "updated_at": role.updated_at.isoformat() if role.updated_at else None,
+        }
+        for role in roles
+    ]
+
+
+@api_router.post("/job-roles")
+@rate_limit(api_limiter)
+def create_job_role(
+    request: Request,
+    payload: JobRolePayload,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    existing = db.query(JobRole).filter(func.lower(JobRole.role_name) == payload.role_name.lower()).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job role already exists")
+
+    role = JobRole(
+        role_name=payload.role_name,
+        department=payload.department,
+        required_skills_json=json.dumps(sorted(set(payload.required_skills))),
+        target_headcount=payload.target_headcount,
+        planning_horizon_months=payload.planning_horizon_months,
+        is_active=payload.is_active,
+    )
+    db.add(role)
+    db.commit()
+    db.refresh(role)
+
+    return {
+        "id": role.id,
+        "role_name": role.role_name,
+        "department": role.department,
+        "required_skills": json.loads(role.required_skills_json or "[]"),
+        "target_headcount": role.target_headcount,
+        "planning_horizon_months": role.planning_horizon_months,
+        "is_active": role.is_active,
+    }
+
+
+@api_router.put("/job-roles/{role_id}")
+@rate_limit(api_limiter)
+def update_job_role(
+    request: Request,
+    role_id: int,
+    payload: JobRolePayload,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    role = db.query(JobRole).filter(JobRole.id == role_id).first()
+    if role is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job role not found")
+
+    duplicate = (
+        db.query(JobRole)
+        .filter(func.lower(JobRole.role_name) == payload.role_name.lower(), JobRole.id != role_id)
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job role already exists")
+
+    role.role_name = payload.role_name
+    role.department = payload.department
+    role.required_skills_json = json.dumps(sorted(set(payload.required_skills)))
+    role.target_headcount = payload.target_headcount
+    role.planning_horizon_months = payload.planning_horizon_months
+    role.is_active = payload.is_active
+    db.commit()
+    db.refresh(role)
+
+    return {
+        "id": role.id,
+        "role_name": role.role_name,
+        "department": role.department,
+        "required_skills": json.loads(role.required_skills_json or "[]"),
+        "target_headcount": role.target_headcount,
+        "planning_horizon_months": role.planning_horizon_months,
+        "is_active": role.is_active,
+    }
 
 
 # =============================
@@ -885,6 +1722,7 @@ def calculate_skill_gap(request: Request, data: SkillDemandSchema, db: Session =
         current_count = current_query.scalar()
 
     gap = data.required_count - current_count
+    scoring = _calculate_gap_score(data.skill_name, data.required_count, current_count)
 
     return {
         "skill_name": data.skill_name,
@@ -894,6 +1732,11 @@ def calculate_skill_gap(request: Request, data: SkillDemandSchema, db: Session =
         "department": data.department,
         "team_name": data.team_name,
         "scope": data.team_name or data.department or "Organization",
+        "coverage_ratio": scoring["coverage_ratio"],
+        "shortage_ratio": scoring["shortage_ratio"],
+        "urgency_score": scoring["urgency_score"],
+        "priority": scoring["priority"],
+        "recommendation_hint": scoring["recommendation_hint"],
     }
 
 
@@ -955,6 +1798,12 @@ def get_recommendation(request: Request, skill_name: str, required_count: int, d
     transfer_count = min(max(gap, 0), len(internal_transfer_candidates), 2)
     upskill_count = min(max(gap - transfer_count, 0), len(upskill_candidates), 4)
     hire_count = max(gap - transfer_count - upskill_count, 0)
+    decision_breakdown = _recommendation_decision_breakdown(
+        skill_name=skill_name,
+        gap=max(gap, 0),
+        transfer_pool=len(internal_transfer_candidates),
+        upskill_pool=len(upskill_candidates),
+    )
 
     if gap <= 0:
         decision = "No action required"
@@ -964,6 +1813,37 @@ def get_recommendation(request: Request, skill_name: str, required_count: int, d
         decision = "Hire + Upskill recommended"
     else:
         decision = "Immediate hiring required"
+
+    recommended_actions = [
+        f"Hire {hire_count} employees" if hire_count else None,
+        f"Upskill {upskill_count} current employees" if upskill_count else None,
+        f"Move {transfer_count} internal experts" if transfer_count else None,
+    ]
+    recommended_actions = [action for action in recommended_actions if action is not None]
+    external_job_posting = _publish_job_posting_signal(
+        skill_name=skill_name,
+        required_count=required_count,
+        current_count=current_count,
+        gap=max(gap, 0),
+        source="recommendation_engine",
+    )
+
+    db.add(
+        RecommendationLog(
+            skill_id=skill.id,
+            department=None,
+            team_name=None,
+            required_count=required_count,
+            current_count=current_count,
+            gap=max(gap, 0),
+            hire_count=hire_count,
+            upskill_count=upskill_count,
+            transfer_count=transfer_count,
+            decision=decision,
+            rationale_json=json.dumps(decision_breakdown["rationale"]),
+        )
+    )
+    db.commit()
 
     return {
         "skill": skill_name,
@@ -976,11 +1856,10 @@ def get_recommendation(request: Request, skill_name: str, required_count: int, d
         "transfer_count": transfer_count,
         "internal_transfer_candidates": internal_transfer_candidates,
         "upskill_candidates": upskill_candidates,
-        "recommended_actions": [
-            f"Hire {hire_count} employees" if hire_count else None,
-            f"Upskill {upskill_count} current employees" if upskill_count else None,
-            f"Move {transfer_count} internal experts" if transfer_count else None,
-        ],
+        "recommended_actions": recommended_actions,
+        "decision_scores": decision_breakdown["scores"],
+        "decision_rationale": decision_breakdown["rationale"],
+        "external_job_posting": external_job_posting,
     }
 
 
@@ -1035,6 +1914,7 @@ async def upload_resume(request: Request, file: UploadFile = File(...), db: Sess
         "experience_years": parsed.get("experience_years", 0),
         "extracted_skills": parsed.get("extracted_skills", []),
         "mapped_skills": parsed.get("mapped_skills", []),
+        "skill_intelligence": parsed.get("skill_intelligence", []),
     }
 
 
@@ -1106,6 +1986,20 @@ class JDParseRequest(BaseModel):
     jd_text: str = Field(min_length=20, max_length=50000)
 
 
+class WorkforceAdvisorRequest(BaseModel):
+    query: str = Field(min_length=4, max_length=2000)
+    department: str | None = Field(default=None, max_length=100)
+    scenario: str = Field(default="balanced", pattern="^(conservative|balanced|aggressive)$")
+    use_llm: bool = True
+
+
+class JobPostingSignalRequest(BaseModel):
+    skill_name: str = Field(min_length=2, max_length=120)
+    required_count: int = Field(ge=0, le=100000)
+    current_count: int = Field(ge=0, le=100000)
+    department: str | None = Field(default=None, max_length=100)
+
+
 @api_router.post("/parse-jd")
 @rate_limit(api_limiter)
 def parse_job_description(request: Request, data: JDParseRequest, db: Session = Depends(get_db)):
@@ -1116,12 +2010,14 @@ def parse_job_description(request: Request, data: JDParseRequest, db: Session = 
     from ml.nlp_extractor import NLPSkillExtractor
 
     extractor = NLPSkillExtractor(db)
-    extracted_skills = extractor.extract_skills_from_text(data.jd_text)
+    skill_signals = extractor.extract_skill_signals(data.jd_text)
+    extracted_skills = sorted(skill_signals.keys())
     matched_skills   = extractor.match_skills_to_database(extracted_skills, db)
 
     # Build gap analysis per matched skill
     skill_analysis = []
     for skill_name, skill_id in matched_skills:
+        signal = skill_signals.get(skill_name, {})
         current_count = (
             db.query(EmployeeSkill)
             .filter(EmployeeSkill.skill_id == skill_id)
@@ -1132,17 +2028,22 @@ def parse_job_description(request: Request, data: JDParseRequest, db: Session = 
             "skill_id":      skill_id,
             "current_count": current_count,
             "in_database":   True,
+            "confidence_score": signal.get("confidence_score", 0.5),
+            "evidence": signal.get("evidence", [])[:2],
         })
 
     # Skills extracted but not in DB yet
-    matched_names = {s for _, s in [(m[1], m[0]) for m in matched_skills]}
+    matched_names = {matched_skill_name for matched_skill_name, _ in matched_skills}
     for skill_name in extracted_skills:
         if skill_name not in matched_names:
+            signal = skill_signals.get(skill_name, {})
             skill_analysis.append({
                 "skill_name":    skill_name,
                 "skill_id":      None,
                 "current_count": 0,
                 "in_database":   False,
+                "confidence_score": signal.get("confidence_score", 0.5),
+                "evidence": signal.get("evidence", [])[:2],
             })
 
     return {
@@ -1150,6 +2051,19 @@ def parse_job_description(request: Request, data: JDParseRequest, db: Session = 
         "total_skills_found":  len(extracted_skills),
         "total_matched_in_db": len(matched_skills),
         "skill_analysis":      skill_analysis,
+        "skill_intelligence": [
+            {
+                "skill_name": skill_name,
+                "confidence_score": payload.get("confidence_score", 0.5),
+                "mentions": payload.get("mentions", 1),
+                "aliases_detected": payload.get("aliases_detected", []),
+            }
+            for skill_name, payload in sorted(
+                skill_signals.items(),
+                key=lambda item: item[1].get("confidence_score", 0),
+                reverse=True,
+            )
+        ],
     }
 
 
@@ -1164,6 +2078,24 @@ def train_ml_models(request: Request, db: Session = Depends(get_db)):
     if "error" in result:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
     return result
+
+
+@api_router.get("/ml/evaluate")
+@rate_limit(api_limiter)
+def evaluate_ml_models(request: Request, db: Session = Depends(get_db)):
+    report = ml_models.get_latest_training_report()
+
+    if report is None:
+        train_result = ml_models.train_models(db)
+        if "error" in train_result:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=train_result["error"])
+        report = ml_models.get_latest_training_report() or train_result
+
+    return {
+        "status": "success",
+        "model_ready": ml_models.demand_model is not None and ml_models.turnover_model is not None,
+        "report": report,
+    }
 
 
 @api_router.get("/ml/forecast/{skill_name}")
@@ -1227,6 +2159,9 @@ def forecast_ml_skill(
 
     adjusted_forecasts: dict[str, list[dict[str, Any]]] = {}
     multiplier = scenario_multiplier[scenario_key]
+    created_snapshots = 0
+    training_report = ml_models.get_latest_training_report() or {}
+    model_version = training_report.get("trained_at")
 
     for dept, predictions in forecast_result.get("forecasts", {}).items():
         adjusted_predictions: list[dict[str, Any]] = []
@@ -1234,6 +2169,23 @@ def forecast_ml_skill(
         for row in predictions:
             adjusted_demand = max(0, int(round(row["demand"] * multiplier)))
             adjusted_gap = max(0, adjusted_demand - row["supply"])
+            confidence = max(0.4, min(0.95, 1 - ((adjusted_gap / max(adjusted_demand, 1)) * 0.6)))
+
+            db.add(
+                PredictionSnapshot(
+                    skill_id=skill_obj.id,
+                    department=dept,
+                    scenario=scenario_key,
+                    horizon_month=row["month"],
+                    forecast_date=datetime.strptime(row["date"], "%Y-%m-%d").replace(tzinfo=timezone.utc),
+                    predicted_demand=adjusted_demand,
+                    predicted_supply=row["supply"],
+                    predicted_gap=adjusted_gap,
+                    model_version=model_version,
+                    confidence=round(confidence, 2),
+                )
+            )
+            created_snapshots += 1
 
             adjusted_predictions.append(
                 {
@@ -1247,11 +2199,15 @@ def forecast_ml_skill(
 
         adjusted_forecasts[dept] = adjusted_predictions
 
+    if created_snapshots:
+        db.commit()
+
     return {
         "skill": forecast_result.get("skill", skill_obj.skill_name),
         "months_ahead": forecast_result.get("months_ahead", months_ahead),
         "scenario": scenario_key,
         "forecasts": adjusted_forecasts,
+        "snapshot_count": created_snapshots,
     }
 
 
@@ -1479,6 +2435,83 @@ def get_workforce_risk(request: Request, db: Session = Depends(get_db)):
         "overall_risk": overall_risk,
         "top_risk_summary": top_risk_summary,
         "teams": team_results,
+    }
+
+
+@api_router.get("/analytics/hiring-trends")
+@rate_limit(api_limiter)
+def get_hiring_trends(
+    request: Request,
+    months: int = Query(12, ge=3, le=24),
+    db: Session = Depends(get_db),
+):
+    employees = db.query(Employee).all()
+    trends = _build_hiring_trend_rows(employees, months=months)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "months": months,
+        "total_hires": sum(row["hires"] for row in trends),
+        "trends": trends,
+    }
+
+
+@api_router.post("/advisor/query")
+@rate_limit(api_limiter)
+def query_workforce_advisor(
+    request: Request,
+    payload: WorkforceAdvisorRequest,
+    db: Session = Depends(get_db),
+):
+    snapshot = _build_workforce_snapshot(
+        db,
+        department=payload.department,
+        scenario=payload.scenario,
+    )
+
+    fallback = _fallback_advisor_response(payload.query, snapshot)
+    llm_answer = _call_openai_advisor(payload.query, snapshot) if payload.use_llm else None
+    mode = "llm" if llm_answer else "fallback"
+
+    return {
+        "mode": mode,
+        "query": payload.query,
+        "department": payload.department,
+        "scenario": payload.scenario,
+        "answer": llm_answer or fallback["answer"],
+        "action_cards": fallback["action_cards"],
+        "follow_up_questions": fallback["follow_up_questions"],
+        "kpis": {
+            "employees": snapshot["employees"],
+            "critical_gap_count": snapshot["critical_gap_count"],
+            "medium_gap_count": snapshot["medium_gap_count"],
+        },
+        "snapshot_generated_at": snapshot["generated_at"],
+    }
+
+
+@api_router.post("/integrations/job-posting/trigger")
+@rate_limit(api_limiter)
+def trigger_job_posting_signal(
+    request: Request,
+    payload: JobPostingSignalRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(Role.ADMIN, Role.HR_MANAGER)),
+):
+    gap = max(payload.required_count - payload.current_count, 0)
+    result = _publish_job_posting_signal(
+        skill_name=payload.skill_name,
+        required_count=payload.required_count,
+        current_count=payload.current_count,
+        gap=gap,
+        department=payload.department,
+        source="manual_trigger",
+    )
+
+    return {
+        "status": "success",
+        "gap": gap,
+        "integration_result": result,
     }
 
 

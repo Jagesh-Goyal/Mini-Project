@@ -9,7 +9,7 @@ Usage:
 """
 
 import re
-from typing import List, Tuple
+from typing import Any, List, Tuple
 from sqlalchemy.orm import Session
 
 from backend.model import Skill
@@ -64,7 +64,7 @@ SKILL_PATTERNS = {
 
     # AI / ML
     "machine learning":       r"\b(machine learning|ml)\b",
-    "artificial intelligence": r"\b(artificial intelligence|ai)\b",
+    "artificial intelligence": r"\b(artificial intelligence|ai engineering|genai|generative ai)\b",
     "tensorflow":  r"\b(tensorflow|tf)\b",
     "pytorch":     r"\b(pytorch)\b",
     "keras":       r"\b(keras)\b",
@@ -82,15 +82,33 @@ SKILL_PATTERNS = {
     "data analysis": r"\b(data analysis|data analyst)\b",
 
     # Security
-    "cybersecurity": r"\b(cybersecurity|security|information security|infosec)\b",
+    "cybersecurity": r"\b(cybersecurity|information security|infosec|application security|appsec)\b",
     "cloud security":r"\b(cloud security|cloud automation security)\b",
 
     # General
     "git":          r"\b(git|github|gitlab)\b",
-    "rest api":     r"\b(rest|rest api|restful)\b",
+    "rest api":     r"\b(rest api|restful api|restful)\b",
     "graphql":      r"\b(graphql)\b",
     "microservices":r"\b(microservices)\b",
     "agile":        r"\b(agile|scrum|kanban)\b",
+}
+
+SKILL_CONFIDENCE_BOOSTS = {
+    "machine learning": 0.08,
+    "artificial intelligence": 0.08,
+    "cloud security": 0.08,
+    "kubernetes": 0.06,
+    "aws": 0.05,
+    "python": 0.04,
+}
+
+SKILL_ALIASES = {
+    "cpp": ["c++", "cpp"],
+    "csharp": ["c#", "csharp", ".net"],
+    "ci/cd": ["cicd", "ci/cd", "jenkins", "github actions", "gitlab ci"],
+    "artificial intelligence": ["ai", "genai", "generative ai"],
+    "machine learning": ["ml", "machine learning"],
+    "rest api": ["rest api", "restful api", "restful"],
 }
 
 
@@ -103,6 +121,71 @@ class NLPSkillExtractor:
         self.db = db
         self.skill_patterns = SKILL_PATTERNS
 
+    @staticmethod
+    def _normalize_skill_key(value: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+        return re.sub(r"\s+", " ", normalized)
+
+    @staticmethod
+    def _extract_evidence_snippet(text: str, start: int, end: int, window: int = 48) -> str:
+        left = max(0, start - window)
+        right = min(len(text), end + window)
+        snippet = text[left:right].replace("\n", " ").strip()
+        return re.sub(r"\s+", " ", snippet)
+
+    def extract_skill_signals(self, text: str) -> dict[str, dict[str, Any]]:
+        """
+        Extract skills with confidence and evidence snippets.
+
+        Returns:
+            {
+                "python": {
+                    "confidence_score": 0.83,
+                    "mentions": 3,
+                    "aliases_detected": ["python"],
+                    "evidence": ["..."]
+                },
+                ...
+            }
+        """
+        if not text:
+            return {}
+
+        signals: dict[str, dict[str, Any]] = {}
+
+        for skill_name, pattern in self.skill_patterns.items():
+            matches = list(re.finditer(pattern, text, re.IGNORECASE))
+            if not matches:
+                continue
+
+            aliases_detected = sorted({match.group(0).strip().lower() for match in matches if match.group(0).strip()})
+            evidence = [
+                self._extract_evidence_snippet(text, match.start(), match.end())
+                for match in matches[:3]
+            ]
+            unique_alias_hits = len(aliases_detected)
+            mentions = len(matches)
+
+            confidence_score = min(
+                0.99,
+                round(
+                    0.42
+                    + (0.16 * min(unique_alias_hits, 3))
+                    + (0.08 if mentions > 1 else 0)
+                    + SKILL_CONFIDENCE_BOOSTS.get(skill_name, 0),
+                    3,
+                ),
+            )
+
+            signals[skill_name] = {
+                "confidence_score": confidence_score,
+                "mentions": mentions,
+                "aliases_detected": aliases_detected,
+                "evidence": evidence,
+            }
+
+        return signals
+
     def extract_skills_from_text(self, text: str) -> List[str]:
         """
         Scan text for known skill patterns.
@@ -113,14 +196,7 @@ class NLPSkillExtractor:
         if not text:
             return []
 
-        text_lower = text.lower()
-        extracted  = set()
-
-        for skill_name, pattern in self.skill_patterns.items():
-            if re.search(pattern, text_lower, re.IGNORECASE):
-                extracted.add(skill_name)
-
-        return sorted(extracted)
+        return sorted(self.extract_skill_signals(text).keys())
 
     def match_skills_to_database(self, extracted_skills: List[str], db: Session) -> List[Tuple[str, int]]:
         """
@@ -129,16 +205,61 @@ class NLPSkillExtractor:
         Returns:
             List of (canonical_name, skill_id) tuples.
         """
-        matched = []
+        db_skills = db.query(Skill).all()
+        exact_index = {self._normalize_skill_key(skill.skill_name): skill for skill in db_skills}
+
+        matched: list[tuple[str, int]] = []
+        seen_skill_ids: set[int] = set()
+
         for skill_name in extracted_skills:
-            db_skill = db.query(Skill).filter(Skill.skill_name.ilike(skill_name)).first()
-            if db_skill:
-                matched.append((skill_name, db_skill.id))
-            else:
-                # Fall back to partial match
-                similar = db.query(Skill).filter(Skill.skill_name.ilike(f"%{skill_name}%")).first()
-                if similar:
-                    matched.append((similar.skill_name, similar.id))
+            normalized_skill = self._normalize_skill_key(skill_name)
+
+            exact_match = exact_index.get(normalized_skill)
+            if exact_match and exact_match.id not in seen_skill_ids:
+                matched.append((skill_name, exact_match.id))
+                seen_skill_ids.add(exact_match.id)
+                continue
+
+            aliases = SKILL_ALIASES.get(skill_name, [skill_name])
+            alias_matches = [
+                skill
+                for skill in db_skills
+                if any(
+                    alias.lower() in skill.skill_name.lower() or skill.skill_name.lower() in alias.lower()
+                    for alias in aliases
+                )
+            ]
+            if alias_matches:
+                alias_matches.sort(key=lambda item: len(item.skill_name))
+                alias_match = alias_matches[0]
+                if alias_match.id not in seen_skill_ids:
+                    matched.append((skill_name, alias_match.id))
+                    seen_skill_ids.add(alias_match.id)
+                continue
+
+            # Fall back to partial token overlap matching.
+            tokens = set(normalized_skill.split())
+            if not tokens:
+                continue
+
+            scored_candidates: list[tuple[float, Skill]] = []
+            for candidate in db_skills:
+                candidate_tokens = set(self._normalize_skill_key(candidate.skill_name).split())
+                if not candidate_tokens:
+                    continue
+                overlap = len(tokens.intersection(candidate_tokens))
+                if overlap == 0:
+                    continue
+                score = overlap / max(len(tokens), len(candidate_tokens))
+                scored_candidates.append((score, candidate))
+
+            if scored_candidates:
+                scored_candidates.sort(key=lambda item: item[0], reverse=True)
+                best_score, best_candidate = scored_candidates[0]
+                if best_score >= 0.5 and best_candidate.id not in seen_skill_ids:
+                    matched.append((skill_name, best_candidate.id))
+                    seen_skill_ids.add(best_candidate.id)
+
         return matched
 
     def _extract_basic_info(self, text: str) -> dict:
@@ -186,14 +307,49 @@ class NLPSkillExtractor:
                 "experience_years": int,
             }
         """
-        extracted_skills = self.extract_skills_from_text(text)
-        matched_skills   = self.match_skills_to_database(extracted_skills, db)
-        parsed_info      = self._extract_basic_info(text)
+        skill_signals = self.extract_skill_signals(text)
+        extracted_skills = sorted(skill_signals.keys())
+        matched_skills = self.match_skills_to_database(extracted_skills, db)
+        parsed_info = self._extract_basic_info(text)
+
+        matched_skill_map = {skill_name: skill_id for skill_name, skill_id in matched_skills}
+        mapped_skills = []
+        for skill_name in extracted_skills:
+            skill_id = matched_skill_map.get(skill_name)
+            if skill_id is None:
+                continue
+
+            signal = skill_signals.get(skill_name, {})
+            mapped_skills.append(
+                {
+                    "skill_name": skill_name,
+                    "skill_id": skill_id,
+                    "confidence_score": signal.get("confidence_score", 0.5),
+                    "mentions": signal.get("mentions", 1),
+                    "evidence": signal.get("evidence", [])[:2],
+                }
+            )
+
+        skill_intelligence = [
+            {
+                "skill_name": skill_name,
+                "confidence_score": payload.get("confidence_score", 0.5),
+                "mentions": payload.get("mentions", 1),
+                "aliases_detected": payload.get("aliases_detected", []),
+                "evidence": payload.get("evidence", []),
+            }
+            for skill_name, payload in sorted(
+                skill_signals.items(),
+                key=lambda item: item[1].get("confidence_score", 0),
+                reverse=True,
+            )
+        ]
 
         return {
             "name":             parsed_info.get("name", "Unknown"),
             "extracted_skills": extracted_skills,
-            "mapped_skills":    [{"skill_name": s[0], "skill_id": s[1]} for s in matched_skills],
+            "mapped_skills":    mapped_skills,
+            "skill_intelligence": skill_intelligence,
             "experience_years": parsed_info.get("experience_years", 0),
         }
 

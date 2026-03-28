@@ -4,8 +4,13 @@ def get_auth_headers(client):
         json={"email": "admin@dakshtra.com", "password": "admin123"},
     )
     assert response.status_code == 200
-    token = response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    token_payload = response.json()
+    token = token_payload["access_token"]
+    csrf_token = token_payload["csrf_token"]
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-CSRF-Token": csrf_token,
+    }
 
 
 def test_login_success(client):
@@ -314,3 +319,502 @@ def test_ml_and_resume_workflow(client):
     created_payload = create_from_resume_response.json()
     assert created_payload["status"] == "success"
     assert "employee_id" in created_payload
+
+
+def test_ml_evaluation_hiring_trends_and_advisor(client):
+    headers = get_auth_headers(client)
+
+    client.post(
+        "/skills",
+        json={"skill_name": "Kubernetes", "category": "DevOps"},
+        headers=headers,
+    )
+    employee_response = client.post(
+        "/employees",
+        json={
+            "name": "Trend User",
+            "department": "Engineering",
+            "role": "Platform Engineer",
+            "year_exp": 4,
+        },
+        headers=headers,
+    )
+    assert employee_response.status_code == 200
+
+    train_response = client.post("/ml/train", headers=headers)
+    assert train_response.status_code == 200
+
+    evaluate_response = client.get("/ml/evaluate", headers=headers)
+    assert evaluate_response.status_code == 200
+    evaluate_payload = evaluate_response.json()
+    assert evaluate_payload["status"] == "success"
+    assert "report" in evaluate_payload
+    assert "demand_metrics" in evaluate_payload["report"]
+
+    hiring_trends_response = client.get("/analytics/hiring-trends", headers=headers)
+    assert hiring_trends_response.status_code == 200
+    hiring_payload = hiring_trends_response.json()
+    assert "trends" in hiring_payload
+    assert isinstance(hiring_payload["trends"], list)
+
+    advisor_response = client.post(
+        "/advisor/query",
+        json={
+            "query": "What should we prioritize for hiring this quarter?",
+            "scenario": "balanced",
+            "use_llm": False,
+        },
+        headers=headers,
+    )
+    assert advisor_response.status_code == 200
+    advisor_payload = advisor_response.json()
+    assert advisor_payload["mode"] in {"llm", "fallback"}
+    assert "answer" in advisor_payload
+    assert isinstance(advisor_payload["action_cards"], list)
+
+
+def test_job_role_planning_endpoints(client):
+    headers = get_auth_headers(client)
+
+    create_role_response = client.post(
+        "/job-roles",
+        json={
+            "role_name": "Cloud Security Engineer",
+            "department": "Security",
+            "required_skills": ["Cloud Security", "AWS", "Kubernetes"],
+            "target_headcount": 4,
+            "planning_horizon_months": 6,
+            "is_active": True,
+        },
+        headers=headers,
+    )
+    assert create_role_response.status_code == 200
+    role_payload = create_role_response.json()
+    role_id = role_payload["id"]
+    assert role_payload["role_name"] == "Cloud Security Engineer"
+
+    list_role_response = client.get("/job-roles", headers=headers)
+    assert list_role_response.status_code == 200
+    role_list = list_role_response.json()
+    assert any(role["id"] == role_id for role in role_list)
+
+    update_role_response = client.put(
+        f"/job-roles/{role_id}",
+        json={
+            "role_name": "Cloud Security Lead",
+            "department": "Security",
+            "required_skills": ["Cloud Security", "AWS"],
+            "target_headcount": 5,
+            "planning_horizon_months": 12,
+            "is_active": True,
+        },
+        headers=headers,
+    )
+    assert update_role_response.status_code == 200
+    updated_payload = update_role_response.json()
+    assert updated_payload["role_name"] == "Cloud Security Lead"
+    assert updated_payload["target_headcount"] == 5
+
+
+def test_jd_parser_with_confidence(client):
+    """Test job description parsing with skill confidence scoring."""
+    headers = get_auth_headers(client)
+
+    jd_text = """
+    Job Title: Senior Backend Engineer
+    
+    Required Skills:
+    - Python (5+ years)
+    - FastAPI or Django
+    - PostgreSQL and MySQL
+    - Kubernetes and Docker
+    - AWS (EC2, S3, Lambda)
+    - Git and CI/CD (Jenkins, GitHub Actions)
+    
+    Nice to have:
+    - Machine Learning basics
+    - Apache Kafka
+    - Redis
+    """
+
+    parse_response = client.post(
+        "/parse-jd",
+        json={"jd_text": jd_text},
+        headers=headers,
+    )
+    assert parse_response.status_code == 200
+    payload = parse_response.json()
+    assert payload["status"] == "success"
+    assert "extracted_skills" in payload
+    assert "mapped_skills" in payload
+    assert "skill_intelligence" in payload
+    
+    # Verify confidence scoring exists
+    for skill in payload.get("skill_intelligence", []):
+        assert "skill_name" in skill
+        assert "confidence" in skill
+        assert 0 <= skill["confidence"] <= 100
+
+
+def test_advisor_query_with_fallback_mode(client):
+    """Test advisor query endpoint with fallback mode (no LLM)."""
+    headers = get_auth_headers(client)
+
+    # Create sample data
+    client.post(
+        "/skills",
+        json={"skill_name": "Kubernetes", "category": "DevOps"},
+        headers=headers,
+    )
+    client.post(
+        "/employees",
+        json={
+            "name": "Advisor Test User",
+            "department": "Engineering",
+            "role": "DevOps Engineer",
+            "year_exp": 3,
+        },
+        headers=headers,
+    )
+
+    # Test various advisor queries
+    test_queries = [
+        "What are our top skill gaps?",
+        "Which departments need the most hiring?",
+        "Should we hire or upskill for Kubernetes?",
+        "What's our workforce risk score?",
+    ]
+
+    for query in test_queries:
+        response = client.post(
+            "/advisor/query",
+            json={
+                "query": query,
+                "use_llm": False,  # Force fallback mode
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["mode"] == "fallback"
+        assert "answer" in payload
+        assert len(payload["answer"]) > 0
+        assert "action_cards" in payload
+        assert isinstance(payload["action_cards"], list)
+        assert "kpi_snapshot" in payload
+
+
+def test_model_evaluation_metrics(client):
+    """Test model evaluation endpoint returns proper metrics."""
+    headers = get_auth_headers(client)
+
+    # Train models first
+    train_response = client.post("/ml/train", headers=headers)
+    assert train_response.status_code == 200
+
+    # Get evaluation metrics
+    eval_response = client.get("/ml/evaluate", headers=headers)
+    assert eval_response.status_code == 200
+    payload = eval_response.json()
+
+    assert payload["status"] == "success"
+    assert "report" in payload
+    report = payload["report"]
+
+    # Check demand model metrics
+    assert "demand_metrics" in report
+    demand_metrics = report["demand_metrics"]
+    assert "mae" in demand_metrics
+    assert "rmse" in demand_metrics
+    assert "r2_score" in demand_metrics
+    assert isinstance(demand_metrics["mae"], (int, float))
+    assert isinstance(demand_metrics["rmse"], (int, float))
+
+    # Check turnover model metrics
+    assert "turnover_metrics" in report
+    turnover_metrics = report["turnover_metrics"]
+    assert "accuracy" in turnover_metrics
+    assert "precision" in turnover_metrics
+    assert "recall" in turnover_metrics
+    assert "f1_score" in turnover_metrics
+
+
+def test_forecast_with_multiple_scenarios(client):
+    """Test forecasting with different scenarios."""
+    headers = get_auth_headers(client)
+
+    # Create skill and employee
+    skill_response = client.post(
+        "/skills",
+        json={"skill_name": "Cloud Security", "category": "Security"},
+        headers=headers,
+    )
+    skill_id = skill_response.json()["data"]["id"]
+
+    client.post(
+        "/employees",
+        json={
+            "name": "Forecast Test User",
+            "department": "Security",
+            "role": "Security Engineer",
+            "year_exp": 4,
+        },
+        headers=headers,
+    )
+
+    # Train models
+    client.post("/ml/train", headers=headers)
+
+    # Test all three scenarios
+    scenarios = ["conservative", "balanced", "aggressive"]
+    for scenario in scenarios:
+        response = client.get(
+            "/ml/forecast/Cloud Security",
+            params={"months_ahead": 6, "scenario": scenario},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["scenario"] == scenario
+        assert "forecasts" in payload
+        assert len(payload["forecasts"]) > 0
+
+
+def test_turnover_risk_prediction(client):
+    """Test turnover risk prediction for employees."""
+    headers = get_auth_headers(client)
+
+    # Create employee
+    emp_response = client.post(
+        "/employees",
+        json={
+            "name": "Turnover Test User",
+            "department": "Engineering",
+            "role": "Developer",
+            "year_exp": 2,
+            "performance_score": 65,
+        },
+        headers=headers,
+    )
+    emp_id = emp_response.json()["id"]
+
+    # Train models
+    client.post("/ml/train", headers=headers)
+
+    # Get turnover risk
+    response = client.get(f"/ml/turnover-risk/{emp_id}", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["employee_id"] == emp_id
+    assert "risk_score" in payload
+    assert "risk_level" in payload
+    assert payload["risk_level"] in ["LOW", "MEDIUM", "HIGH"]
+    assert 0 <= payload["risk_score"] <= 100
+
+
+def test_hiring_trends_analytics(client):
+    """Test hiring trends endpoint returns proper historical data."""
+    headers = get_auth_headers(client)
+
+    response = client.get("/analytics/hiring-trends", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert "trends" in payload
+    assert isinstance(payload["trends"], list)
+    
+    # Verify trend structure
+    for trend in payload["trends"]:
+        assert "month" in trend
+        assert "hires" in trend
+        assert "department" in trend or trend.get("all_departments") is not None
+
+
+def test_file_upload_edge_cases(client):
+    """Test edge cases for file uploads."""
+    headers = get_auth_headers(client)
+
+    # Test 1: Empty file
+    empty_response = client.post(
+        "/upload-resume",
+        files={"file": ("empty.txt", b"", "text/plain")},
+        headers=headers,
+    )
+    assert empty_response.status_code in [200, 400]  # Either returns empty result or error
+
+    # Test 2: Large text resume
+    large_resume = "Python AWS Kubernetes " * 500  # Large text
+    large_response = client.post(
+        "/upload-resume",
+        files={"file": ("large_resume.txt", large_resume.encode(), "text/plain")},
+        headers=headers,
+    )
+    assert large_response.status_code == 200
+
+    # Test 3: Resume with multiple skills
+    detailed_resume = """
+    John Doe
+    Senior Full-Stack Engineer
+    
+    Technical Skills:
+    - Languages: Python, JavaScript, TypeScript, Java, Go
+    - Frontend: React, Vue, Angular, Next.js
+    - Backend: FastAPI, Django, Express, Spring Boot
+    - Cloud: AWS, GCP, Azure, Kubernetes, Docker
+    - Databases: PostgreSQL, MongoDB, Redis, DynamoDB
+    - DevOps: CI/CD, Jenkins, GitHub Actions, GitLab CI
+    - Data: TensorFlow, PyTorch, scikit-learn, pandas
+    - Tools: Git, Linux, Nginx, Apache
+    
+    Experience: 8 years
+    """
+    detail_response = client.post(
+        "/upload-resume",
+        files={"file": ("detailed_resume.txt", detailed_resume.encode(), "text/plain")},
+        headers=headers,
+    )
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert "mapped_skills" in detail_payload
+    assert len(detail_payload["mapped_skills"]) > 0
+
+
+def test_recommendation_with_decision_rationale(client):
+    """Test that recommendations include decision scores and rationale."""
+    headers = get_auth_headers(client)
+
+    # Create full workflow
+    skill_response = client.post(
+        "/skills",
+        json={"skill_name": "AI/ML", "category": "Data Science"},
+        headers=headers,
+    )
+    skill_id = skill_response.json()["data"]["id"]
+
+    # Create employees with varying proficiency
+    emp1 = client.post(
+        "/employees",
+        json={
+            "name": "ML Expert",
+            "department": "Data",
+            "role": "ML Engineer",
+            "year_exp": 7,
+        },
+        headers=headers,
+    ).json()["id"]
+
+    emp2 = client.post(
+        "/employees",
+        json={
+            "name": "Junior Developer",
+            "department": "Data",
+            "role": "Junior Dev",
+            "year_exp": 1,
+        },
+        headers=headers,
+    ).json()["id"]
+
+    # Assign skills
+    client.post(
+        "/assign-skill",
+        json={"employee_id": emp1, "skill_id": skill_id, "proficiency_level": 5},
+        headers=headers,
+    )
+    client.post(
+        "/assign-skill",
+        json={"employee_id": emp2, "skill_id": skill_id, "proficiency_level": 2},
+        headers=headers,
+    )
+
+    # Get recommendation
+    response = client.get(
+        "/recommendation/AI/ML",
+        params={"required_count": 5},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    # Verify decision structure
+    assert "hire_count" in payload
+    assert "upskill_count" in payload
+    assert "transfer_count" in payload
+    assert "decision_scores" in payload
+    assert "decision_rationale" in payload
+    assert isinstance(payload["decision_rationale"], list)
+    assert len(payload["decision_rationale"]) > 0
+
+
+def test_pagination_employee_list(client):
+    """Test pagination parameters for employee listing."""
+    headers = get_auth_headers(client)
+
+    # Create multiple employees
+    for i in range(15):
+        client.post(
+            "/employees",
+            json={
+                "name": f"Employee {i}",
+                "department": "Engineering",
+                "role": "Developer",
+                "year_exp": i % 5,
+            },
+            headers=headers,
+        )
+
+    # Test with pagination parameters
+    response = client.get(
+        "/employees",
+        params={"skip": 0, "limit": 5},
+        headers=headers,
+    )
+    
+    # Should handle pagination gracefully
+    assert response.status_code == 200
+
+
+def test_skill_gap_with_department_scope(client):
+    """Test skill gap analysis scoped to a department."""
+    headers = get_auth_headers(client)
+
+    # Create employees in different departments
+    skill_id = client.post(
+        "/skills",
+        json={"skill_name": "DevOps", "category": "Infrastructure"},
+        headers=headers,
+    ).json()["data"]["id"]
+
+    for dept in ["Engineering", "DevOps", "Data"]:
+        emp = client.post(
+            "/employees",
+            json={
+                "name": f"User in {dept}",
+                "department": dept,
+                "role": "Role",
+                "year_exp": 2,
+            },
+            headers=headers,
+        ).json()["id"]
+        
+        if dept == "DevOps":
+            client.post(
+                "/assign-skill",
+                json={"employee_id": emp, "skill_id": skill_id, "proficiency_level": 3},
+                headers=headers,
+            )
+
+    # Test skill gap with department scope
+    response = client.post(
+        "/skill-gap",
+        json={
+            "skill_name": "DevOps",
+            "required_count": 4,
+            "department": "DevOps",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert "gap" in payload
+    assert "coverage_ratio" in payload

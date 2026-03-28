@@ -11,15 +11,20 @@ from backend.database import engine, SessionLocal
 from backend import model
 
 # router import
-from backend.all_api import hash_password, router
+from backend.all_api import hash_password, verify_password, router
 
 # security helpers
 from backend.security import Role
+from backend.logging_config import configure_logging, get_logger
 
 # seed database
 from backend.seed import seed_database
 
 from ml.model import ml_models
+
+
+configure_logging()
+logger = get_logger("dakshtra.app")
 
 
 # create database tables
@@ -73,8 +78,16 @@ def ensure_workforce_schema_compatibility() -> None:
                 connection.execute(
                     text("ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'employee'")
                 )
+            if "is_active" not in user_columns:
+                connection.execute(
+                    text("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
+                )
+            if "last_login" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN last_login DATETIME"))
             if "created_at" not in user_columns:
                 connection.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
+            if "updated_at" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
 
     db = SessionLocal()
     try:
@@ -108,10 +121,29 @@ def ensure_workforce_schema_compatibility() -> None:
 def ensure_default_system_users() -> None:
     db = SessionLocal()
     try:
+        default_admin_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@dakshtra.com")
+        default_hr_email = os.getenv("DEFAULT_HR_EMAIL", "hr@dakshtra.com")
+        default_employee_email = os.getenv("DEFAULT_EMPLOYEE_EMAIL", "employee@dakshtra.com")
+
         default_users = [
-            ("Admin", "admin@dakshtra.com", "admin123", Role.ADMIN),
-            ("HR Manager", "hr@dakshtra.com", "hrmanager123", Role.HR_MANAGER),
-            ("Employee", "employee@dakshtra.com", "employee123", Role.EMPLOYEE),
+            (
+                "Admin",
+                default_admin_email,
+                os.getenv("DEFAULT_ADMIN_PASSWORD") or "admin123",
+                Role.ADMIN,
+            ),
+            (
+                "HR Manager",
+                default_hr_email,
+                os.getenv("DEFAULT_HR_PASSWORD") or "hr123456",
+                Role.HR_MANAGER,
+            ),
+            (
+                "Employee",
+                default_employee_email,
+                os.getenv("DEFAULT_EMPLOYEE_PASSWORD") or "employee123",
+                Role.EMPLOYEE,
+            ),
         ]
 
         for name, email, password, role in default_users:
@@ -125,6 +157,21 @@ def ensure_default_system_users() -> None:
                         role=role,
                     )
                 )
+            else:
+                existing_user.role = Role.normalize(existing_user.role)
+
+                should_repair_default_password = (
+                    existing_user.last_login is None
+                    and existing_user.email in {default_admin_email, default_hr_email, default_employee_email}
+                    and not verify_password(password, existing_user.password_hash)
+                )
+
+                if should_repair_default_password:
+                    existing_user.password_hash = hash_password(password)
+                    logger.warning(
+                        "Repaired password for default system user %s. Configure DEFAULT_*_PASSWORD in environment for production.",
+                        existing_user.email,
+                    )
 
         db.commit()
     finally:
@@ -147,17 +194,40 @@ app = FastAPI(
 )
 
 # =============================
+# Scheduler Setup - Auto Model Retraining
+# =============================
+from backend.scheduler import initialize_scheduler, shutdown_scheduler
+
+@app.on_event("startup")
+def startup_event():
+    """Initialize background scheduler on app startup."""
+    initialize_scheduler()
+    logger.info("Application startup completed")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    """Gracefully shutdown scheduler on app shutdown."""
+    shutdown_scheduler()
+    logger.info("Application shutdown completed")
+
+# =============================
 # Security Setup
 # =============================
 
 # CORS Configuration - Restricted to specific frontend origins
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=allowed_origins,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
 )
 
 # include routes
