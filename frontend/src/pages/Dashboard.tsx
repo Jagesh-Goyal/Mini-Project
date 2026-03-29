@@ -28,16 +28,21 @@ const barData = [
 
 export default function Dashboard() {
   return (
-    <div className='space-y-6'>
-      <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4'>
-        {kpis.map((item) => (
-          <Card key={item.label}>
-            <p className='text-sm text-slate-500'>{item.label}</p>
-            <p className='text-3xl font-semibold text-slate-800 mt-1'>{item.value}</p>
-          </Card>
+    <div className='dashboard-container'>
+      <div className='grid-4'>
+        {kpis.map((item, index) => (
+          <div
+            key={item.label}
+            className='kpi-card'
+            style={{ animationDelay: `calc(${index} * 0.08s)` }}
+          >
+            <p className='kpi-label'>{item.label}</p>
+            <p className='kpi-value'>{item.value}</p>
+          </div>
         ))}
       </div>
-      <div className='grid grid-cols-1 xl:grid-cols-3 gap-4'>
+
+      <div className='grid-dashboard'>
         <Card title='Skill Demand Forecast'>
           <ForecastChart data={lineData} />
         </Card>
@@ -45,7 +50,7 @@ export default function Dashboard() {
           <WorkforceBarChart data={barData} />
         </Card>
         <Card title='Recent Activity'>
-          <ul className='space-y-3 text-sm text-slate-600'>
+          <ul className='activity-list'>
             <li>3 employees added in Engineering</li>
             <li>Skill gap report generated for Data team</li>
             <li>2 resumes parsed and mapped to employees</li>

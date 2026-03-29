@@ -39,56 +39,57 @@ export default function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-30 h-16 border-b border-slate-700/70 bg-slate-900/70 px-4 backdrop-blur-md lg:px-6">
-      <div className="flex h-full items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <button
-            onClick={toggleSidebar}
-            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white lg:hidden"
-          >
-            <Menu size={20} />
-          </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold text-white">{title}</h1>
-            <p className="hidden text-xs text-slate-400 sm:block">Workforce insights and actions</p>
+    <header className="topbar">
+      <div className="topbar-left">
+        <button
+          onClick={toggleSidebar}
+          className="topbar-menu-btn lg:hidden"
+        >
+          <Menu size={20} />
+        </button>
+        <div className="topbar-title-section">
+          <h1 className="page-title">{title}</h1>
+          <p className="topbar-subtitle">Workforce insights and actions</p>
+        </div>
+      </div>
+
+      <div className="topbar-right">
+        <button className="topbar-search-btn">
+          <Search size={14} />
+          Search
+        </button>
+
+        <span className="status-badge live">
+          Live
+        </span>
+
+        <button
+          className="topbar-icon-btn"
+          title="Notifications"
+        >
+          <Bell size={18} />
+        </button>
+
+        <div className="topbar-divider" />
+
+        <div className="user-profile">
+          <div className="user-avatar">
+            <User size={16} />
+          </div>
+          <div className="user-info">
+            <p className="user-name">{userName}</p>
+            <p className="user-role">{roleLabel}</p>
+            <p className="user-email">{userEmail}</p>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button className="hidden items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-600/90 hover:text-white md:inline-flex">
-            <Search size={14} />
-            Search
-          </button>
-
-          <span className="hidden rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300 lg:inline-flex">
-            Live
-          </span>
-
-          <button
-            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
-            title="Notifications"
-          >
-            <Bell size={18} />
-          </button>
-
-          <div className="h-6 w-px bg-slate-700/80" />
-
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600/90">
-            <User size={16} className="text-white" />
-          </div>
-          <div className="hidden sm:block">
-            <p className="text-sm font-medium leading-tight text-white">{userName}</p>
-            <p className="text-[11px] uppercase tracking-wide text-cyan-300/80">{roleLabel}</p>
-            <p className="max-w-[200px] truncate text-xs leading-tight text-slate-400">{userEmail}</p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-rose-400"
-            title="Logout"
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
+        
+        <button
+          onClick={handleLogout}
+          className="topbar-logout-btn"
+          title="Logout"
+        >
+          <LogOut size={18} />
+        </button>
       </div>
     </header>
   );

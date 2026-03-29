@@ -6,7 +6,7 @@ import { useSkillGap } from '@/hooks/useSkillGap';
 export default function SkillGapAnalysis() {
   const { items } = useSkillGap();
 
-  const radar = items.slice(0, 6).map((item) => ({ skill: item.skill, required: item.required_level, current: item.avg_current_level }));
+  const radar = items.slice(0, 6).map((item) => ({ name: item.skill, fullMark: item.required_level, value: item.avg_current_level }));
 
   return (
     <div className='space-y-4'>

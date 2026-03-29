@@ -11,7 +11,10 @@ export default function Employees() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    employeeApi.list().then((res) => setRows(res.data));
+    employeeApi.list().then((res) => {
+      const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setRows(data as Employee[]);
+    });
   }, []);
 
   const filtered = useMemo(
@@ -23,21 +26,30 @@ export default function Employees() {
     <div className='space-y-4'>
       <Card title='Employees'>
         <div className='flex flex-wrap gap-3 mb-4'>
-          <input className='input max-w-sm' placeholder='Search by name or email' value={search} onChange={(e) => setSearch(e.target.value)} />
-          <button className='btn-primary' onClick={() => setOpen(true)}>Add Employee</button>
+          <input
+            className='input max-w-sm'
+            placeholder='Search by name or email'
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <button
+            className='btn-primary'
+            onClick={() => setOpen(true)}
+          >
+            Add Employee
+          </button>
         </div>
         <Table
-          columns={[
-            { key: 'name', label: 'Name' },
-            { key: 'department', label: 'Department' },
-            { key: 'job_title', label: 'Role' },
-            { key: 'email', label: 'Email' },
-          ]}
+          columns={['name', 'department', 'role', 'email']}
           rows={filtered}
         />
       </Card>
-      <Modal open={open} title='Add Employee' onClose={() => setOpen(false)}>
-        <p className='text-sm text-slate-600'>Employee creation form can be expanded here with full validation.</p>
+      <Modal
+        open={open}
+        title='Add Employee'
+        onClose={() => setOpen(false)}
+      >
+        <p className='body-text'>Employee creation form can be expanded here with full validation.</p>
       </Modal>
     </div>
   );
