@@ -194,7 +194,6 @@ export interface StrategicRecommendation {
   internal_transfer_candidates: TransferRecommendationCandidate[];
   upskill_candidates: UpskillRecommendationCandidate[];
   recommended_actions: Array<string | null>;
-<<<<<<< HEAD
   decision_scores?: {
     hire_pressure: number;
     upskill_fit: number;
@@ -239,8 +238,3 @@ export interface WorkforceAdvisorResponse {
   };
   snapshot_generated_at: string;
 }
-=======
-}
-
-export type ReportFormat = 'csv' | 'xlsx' | 'pdf';
->>>>>>> 3bcda08 (Updated backend files)

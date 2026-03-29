@@ -13,11 +13,8 @@ import type {
   TrainingHistoryEntry,
   UpskillingRecommendationsResponse,
   WorkforceRiskResponse,
-<<<<<<< HEAD
   WorkforceAdvisorResponse,
   HiringTrendsResponse,
-=======
->>>>>>> 3bcda08 (Updated backend files)
   ReportFormat,
 } from '@/types';
 
@@ -82,10 +79,7 @@ export interface LoginResponse {
   email: string;
   name: string;
   role: string;
-<<<<<<< HEAD
   csrf_token: string;
-=======
->>>>>>> 3bcda08 (Updated backend files)
 }
 
 export interface SignUpPayload {
@@ -305,7 +299,6 @@ export interface JDParseResponse {
 export const parseJobDescription = (jd_text: string) =>
   api.post<JDParseResponse>('/parse-jd', { jd_text });
 
-<<<<<<< HEAD
 export const getHiringTrends = (months: number = 12) =>
   api.get<HiringTrendsResponse>('/analytics/hiring-trends', { params: { months } });
 
@@ -319,8 +312,6 @@ export interface WorkforceAdvisorPayload {
 export const queryWorkforceAdvisor = (payload: WorkforceAdvisorPayload) =>
   api.post<WorkforceAdvisorResponse>('/advisor/query', payload);
 
-=======
->>>>>>> 3bcda08 (Updated backend files)
 export const downloadSkillGapReport = (format: ReportFormat) =>
   api.get('/reports/skill-gap', {
     params: { export_format: format },

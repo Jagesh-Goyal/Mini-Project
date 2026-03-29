@@ -2,17 +2,11 @@
 Security utilities for the Dakshtra application.
 
 Features:
-<<<<<<< HEAD
 - 🔐 Password hashing with bcrypt (no plain text)
 - 🎫 JWT authentication with access & refresh tokens
 - ♻️ Token expiry & refresh mechanism
 - 🛡️ Role-based access control (Admin, HR, Employee)
 - ⏱️ Rate limiting (100 requests/minute per IP)
-=======
-- Rate limiting (100 requests/minute per IP)
-- Role-based authorization (admin, hr_manager, employee)
-- Input validation helpers
->>>>>>> 3bcda08 (Updated backend files)
 """
 
 from collections import defaultdict
@@ -403,16 +397,6 @@ def rate_limit(limiter: RateLimiter):
             return func(*args, **kwargs)
         return wrapper
     return decorator
-<<<<<<< HEAD
-=======
-
-
-# =============================
-# Role-Based Authorization
-# =============================
-
-class Role:
-    """User role definitions."""
 
     ADMIN = "admin"
     HR_MANAGER = "hr_manager"
@@ -452,4 +436,3 @@ class Role:
     @classmethod
     def can_manage_data(cls, value: str | None) -> bool:
         return cls.normalize(value) in cls.WRITE_ACCESS
->>>>>>> 3bcda08 (Updated backend files)

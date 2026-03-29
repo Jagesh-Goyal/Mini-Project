@@ -23,7 +23,6 @@ from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal
 from ml.model import ml_models
-<<<<<<< HEAD
 from backend.model import (
     Employee,
     EmployeeSkill,
@@ -34,9 +33,6 @@ from backend.model import (
     TrainingHistory,
     User,
 )
-=======
-from backend.model import Employee, EmployeeSkill, Skill, TrainingHistory, User
->>>>>>> 3bcda08 (Updated backend files)
 from ml.nlp_extractor import extract_skills_from_resume
 from backend.security import (
     rate_limit,
@@ -63,13 +59,10 @@ from backend.schemas import (
     SkillDemandSchema,
     SkillUpdate,
     TokenResponse,
-<<<<<<< HEAD
     TokenRefreshRequest,
     TokenRefreshResponse,
     UserProfileResponse,
     UserUpdateRequest,
-=======
->>>>>>> 3bcda08 (Updated backend files)
     TrainingHistoryCreate,
 )
 
@@ -172,31 +165,6 @@ PROFICIENCY_LABELS = {
     5: "Expert",
 }
 
-<<<<<<< HEAD
-=======
-CATEGORY_GROWTH = {
-    "AI/ML": 1.35,
-    "Cloud": 1.30,
-    "DevOps": 1.28,
-    "Security": 1.32,
-    "Backend": 1.20,
-    "Frontend": 1.18,
-    "Programming": 1.16,
-    "Database": 1.15,
-    "Data Science": 1.25,
-}
-
-STRATEGIC_SKILLS = {
-    "Machine Learning",
-    "Artificial Intelligence",
-    "Cloud Security",
-    "Kubernetes",
-    "AWS",
-    "Cybersecurity",
-}
-
-
->>>>>>> 3bcda08 (Updated backend files)
 def require_roles(*allowed_roles: str):
     normalized_roles = {Role.normalize(role) for role in allowed_roles}
 
@@ -378,7 +346,6 @@ def _build_gap_overview_scope(label: str, rows: list[dict[str, Any]]) -> dict[st
     }
 
 
-<<<<<<< HEAD
 def _calculate_gap_score(skill_name: str, required_count: int, current_count: int) -> dict[str, Any]:
     gap = max(required_count - current_count, 0)
     coverage_ratio = round((current_count / required_count), 3) if required_count > 0 else 1.0
@@ -884,8 +851,6 @@ def _publish_job_posting_signal(
     }
 
 
-=======
->>>>>>> 3bcda08 (Updated backend files)
 def _dataframe_download_response(filename: str, rows: list[dict[str, Any]], export_format: str, title: str) -> Response:
     if export_format == "csv":
         buffer = StringIO()
@@ -979,10 +944,7 @@ def signup(request: Request, data: SignUpRequest, db: Session = Depends(get_db))
         email=data.email,
         password_hash=hash_password(data.password),
         role=Role.EMPLOYEE,
-<<<<<<< HEAD
         is_active=True,
-=======
->>>>>>> 3bcda08 (Updated backend files)
     )
 
     db.add(new_user)
@@ -1084,14 +1046,7 @@ def refresh_access_token(data: TokenRefreshRequest):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-<<<<<<< HEAD
         "expires_in": token_manager.access_token_expire_minutes * 60,
-=======
-        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "email": user.email,
-        "name": user.name,
-        "role": Role.normalize(user.role),
->>>>>>> 3bcda08 (Updated backend files)
     }
 
 
@@ -1217,16 +1172,11 @@ def update_profile(
     return {
         "id": user.id,
         "name": user.name,
-<<<<<<< HEAD
         "email": user.email,
         "role": Role.normalize(user.role),
         "is_active": user.is_active,
         "last_login": user.last_login,
         "created_at": user.created_at,
-=======
-        "role": Role.normalize(current_user.get("role", Role.EMPLOYEE)),
-        "role_label": Role.label(current_user.get("role", Role.EMPLOYEE)),
->>>>>>> 3bcda08 (Updated backend files)
     }
 
 
@@ -1274,7 +1224,6 @@ def add_employee(
 
 
 @api_router.get("/employees")
-<<<<<<< HEAD
 def get_all_employees(
     request: Request,
     db: Session = Depends(get_db),
@@ -1296,11 +1245,6 @@ def get_all_employees(
         "limit": limit,
         "has_more": (skip + limit) < total_count,
     }
-=======
-def get_all_employees(request: Request, db: Session = Depends(get_db)):
-    employees = db.query(Employee).order_by(Employee.name.asc()).all()
-    return [_serialize_employee(employee) for employee in employees]
->>>>>>> 3bcda08 (Updated backend files)
 
 
 @api_router.get("/employees/{employee_id}/profile")
@@ -1487,7 +1431,6 @@ def add_skill(
 
 
 @api_router.get("/skills")
-<<<<<<< HEAD
 def get_all_skills(
     request: Request,
     db: Session = Depends(get_db),
@@ -1509,11 +1452,6 @@ def get_all_skills(
         "limit": limit,
         "has_more": (skip + limit) < total_count,
     }
-=======
-def get_all_skills(request: Request, db: Session = Depends(get_db)):
-    skills = db.query(Skill).order_by(Skill.category.asc(), Skill.skill_name.asc()).all()
-    return [_serialize_skill(skill) for skill in skills]
->>>>>>> 3bcda08 (Updated backend files)
 
 
 @api_router.put("/skills/{skill_id}")
@@ -1561,7 +1499,6 @@ def delete_skill(
     db.delete(skill)
     db.commit()
     return {"message": f"Skill {skill.skill_name} deleted successfully"}
-<<<<<<< HEAD
 
 
 class JobRolePayload(BaseModel):
@@ -1665,8 +1602,6 @@ def update_job_role(
         "planning_horizon_months": role.planning_horizon_months,
         "is_active": role.is_active,
     }
-=======
->>>>>>> 3bcda08 (Updated backend files)
 
 
 # =============================
@@ -1804,14 +1739,11 @@ def calculate_skill_gap(request: Request, data: SkillDemandSchema, db: Session =
         "department": data.department,
         "team_name": data.team_name,
         "scope": data.team_name or data.department or "Organization",
-<<<<<<< HEAD
         "coverage_ratio": scoring["coverage_ratio"],
         "shortage_ratio": scoring["shortage_ratio"],
         "urgency_score": scoring["urgency_score"],
         "priority": scoring["priority"],
         "recommendation_hint": scoring["recommendation_hint"],
-=======
->>>>>>> 3bcda08 (Updated backend files)
     }
 
 
@@ -1873,15 +1805,12 @@ def get_recommendation(request: Request, skill_name: str, required_count: int, d
     transfer_count = min(max(gap, 0), len(internal_transfer_candidates), 2)
     upskill_count = min(max(gap - transfer_count, 0), len(upskill_candidates), 4)
     hire_count = max(gap - transfer_count - upskill_count, 0)
-<<<<<<< HEAD
     decision_breakdown = _recommendation_decision_breakdown(
         skill_name=skill_name,
         gap=max(gap, 0),
         transfer_pool=len(internal_transfer_candidates),
         upskill_pool=len(upskill_candidates),
     )
-=======
->>>>>>> 3bcda08 (Updated backend files)
 
     if gap <= 0:
         decision = "No action required"
@@ -1934,18 +1863,10 @@ def get_recommendation(request: Request, skill_name: str, required_count: int, d
         "transfer_count": transfer_count,
         "internal_transfer_candidates": internal_transfer_candidates,
         "upskill_candidates": upskill_candidates,
-<<<<<<< HEAD
         "recommended_actions": recommended_actions,
         "decision_scores": decision_breakdown["scores"],
         "decision_rationale": decision_breakdown["rationale"],
         "external_job_posting": external_job_posting,
-=======
-        "recommended_actions": [
-            f"Hire {hire_count} employees" if hire_count else None,
-            f"Upskill {upskill_count} current employees" if upskill_count else None,
-            f"Move {transfer_count} internal experts" if transfer_count else None,
-        ],
->>>>>>> 3bcda08 (Updated backend files)
     }
 
 

@@ -10,14 +10,11 @@ from pydantic import BaseModel, Field, field_validator
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-<<<<<<< HEAD
 def _sanitize_text(value: str) -> str:
     cleaned = bleach.clean(value, tags=[], attributes={}, strip=True)
     return cleaned.strip()
 
 
-=======
->>>>>>> 3bcda08 (Updated backend files)
 class EmployeeBase(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     email: str | None = Field(default=None, max_length=255)
@@ -48,7 +45,6 @@ class EmployeeBase(BaseModel):
         clean_value = value.strip().upper()
         return clean_value or None
 
-<<<<<<< HEAD
     @field_validator("name", "department", "role")
     @classmethod
     def sanitize_required_text(cls, value: str) -> str:
@@ -57,8 +53,6 @@ class EmployeeBase(BaseModel):
             raise ValueError("Field cannot be empty")
         return clean_value
 
-=======
->>>>>>> 3bcda08 (Updated backend files)
     @field_validator("manager", "team_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
@@ -96,7 +90,6 @@ class TrainingHistoryCreate(BaseModel):
         clean_value = value.strip()
         return clean_value or None
 
-<<<<<<< HEAD
     @field_validator("training_name", "status")
     @classmethod
     def sanitize_training_text(cls, value: str) -> str:
@@ -104,9 +97,6 @@ class TrainingHistoryCreate(BaseModel):
         if not clean_value:
             raise ValueError("Field cannot be empty")
         return clean_value
-
-=======
->>>>>>> 3bcda08 (Updated backend files)
 
 class TrainingHistoryResponse(BaseModel):
     id: int
@@ -139,7 +129,6 @@ class SkillCreate(BaseModel):
         clean_value = value.strip()
         return clean_value or None
 
-<<<<<<< HEAD
     @field_validator("skill_name", "category")
     @classmethod
     def sanitize_skill_text(cls, value: str) -> str:
@@ -148,8 +137,6 @@ class SkillCreate(BaseModel):
             raise ValueError("Field cannot be empty")
         return clean_value
 
-=======
->>>>>>> 3bcda08 (Updated backend files)
 
 class SkillUpdate(SkillCreate):
     pass
@@ -189,17 +176,6 @@ class CreateEmployeeFromResumeSchema(BaseModel):
             raise ValueError("Please enter a valid email address")
         return clean_value
 
-<<<<<<< HEAD
-    @field_validator("name", "department", "role")
-    @classmethod
-    def sanitize_resume_required_text(cls, value: str) -> str:
-        clean_value = _sanitize_text(value)
-        if not clean_value:
-            raise ValueError("Field cannot be empty")
-        return clean_value
-
-=======
->>>>>>> 3bcda08 (Updated backend files)
 
 class SkillDemandSchema(BaseModel):
     """Skill demand analysis."""
@@ -217,10 +193,7 @@ class SkillDemandSchema(BaseModel):
             raise ValueError("Skill name cannot be empty")
         return clean_value
 
-<<<<<<< HEAD
 
-=======
->>>>>>> 3bcda08 (Updated backend files)
 class SignUpRequest(BaseModel):
     """User signup with validation."""
 
@@ -280,7 +253,6 @@ class SignUpResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-<<<<<<< HEAD
     access_token: str
     refresh_token: str
     token_type: str
@@ -350,11 +322,3 @@ class UserListResponse(BaseModel):
     
     class Config:
         from_attributes = True
-=======
-    access_token: str
-    token_type: str
-    expires_in: int
-    email: str
-    name: str
-    role: str
->>>>>>> 3bcda08 (Updated backend files)
