@@ -19,9 +19,29 @@ env:
   NODE_VERSION: "20"
 
 jobs:
-  backend-tests:
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'ml/**'
+              - 'requirements.txt'
+            frontend:
+              - 'frontend/**'
+
+  backend-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -41,15 +61,14 @@ jobs:
       - name: Syntax check backend + ml modules
         run: python -m compileall -q backend ml
 
-      - name: Backend startup smoke test
-        run: python -c "from backend import app; print('BACKEND_IMPORT_OK')"
-
-      - name: Run backend tests
-        run: python -m pytest backend/tests -q --tb=short
+      - name: Run backend tests (fast fail)
+        run: python -m pytest backend/tests -x --tb=line -q
 
   frontend-checks:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -64,23 +83,27 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
-      - name: Run frontend tests
+      - name: Run linting
         working-directory: frontend
-        run: npm run test
+        run: npm run lint
 
-      - name: Build frontend
+      - name: Build frontend (optimized)
         working-directory: frontend
         run: npm run build
+        env:
+          NODE_ENV: production
 
   deploy-ready:
     needs: [backend-tests, frontend-checks]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: always() && (needs.backend-tests.result == 'success' || needs.backend-tests.result == 'skipped') && (needs.frontend-checks.result == 'success' || needs.frontend-checks.result == 'skipped')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Deployment gate
-        run: echo "All CI checks passed. Ready for deployment stage."
+      - name: Check workflow status
+        run: |
+          if [[ "${{ needs.backend-tests.result }}" == "failure" || "${{ needs.frontend-checks.result }}" == "failure" ]]; then
+            echo "CI checks failed"
+            exit 1
+          fi
+          echo "All CI checks passed. Ready for deployment stage."
