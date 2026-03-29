@@ -11,7 +11,10 @@ import {
   ScanSearch,
   FileSearch,
   Grid2x2,
+<<<<<<< HEAD
   Bot,
+=======
+>>>>>>> 3bcda08 (Updated backend files)
   X,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
@@ -27,7 +30,10 @@ const navItems = [
   { to: '/resume-parser', icon: ScanSearch, label: 'Resume Parser' },
   { to: '/jd-parser', icon: FileSearch, label: 'JD Parser' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
+<<<<<<< HEAD
   { to: '/advisor', icon: Bot, label: 'AI Advisor' },
+=======
+>>>>>>> 3bcda08 (Updated backend files)
   { to: '/reports', icon: FileSpreadsheet, label: 'Reports' },
 ];
 

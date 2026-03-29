@@ -14,7 +14,10 @@ const pageTitles: Record<string, string> = {
   '/resume-parser': 'Resume Parser',
   '/jd-parser': 'JD Parser',
   '/recommendations': 'Recommendations',
+<<<<<<< HEAD
   '/advisor': 'AI Advisor',
+=======
+>>>>>>> 3bcda08 (Updated backend files)
   '/reports': 'Reports',
 };
 

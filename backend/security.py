@@ -2,11 +2,17 @@
 Security utilities for the Dakshtra application.
 
 Features:
+<<<<<<< HEAD
 - 🔐 Password hashing with bcrypt (no plain text)
 - 🎫 JWT authentication with access & refresh tokens
 - ♻️ Token expiry & refresh mechanism
 - 🛡️ Role-based access control (Admin, HR, Employee)
 - ⏱️ Rate limiting (100 requests/minute per IP)
+=======
+- Rate limiting (100 requests/minute per IP)
+- Role-based authorization (admin, hr_manager, employee)
+- Input validation helpers
+>>>>>>> 3bcda08 (Updated backend files)
 """
 
 from collections import defaultdict
@@ -397,3 +403,53 @@ def rate_limit(limiter: RateLimiter):
             return func(*args, **kwargs)
         return wrapper
     return decorator
+<<<<<<< HEAD
+=======
+
+
+# =============================
+# Role-Based Authorization
+# =============================
+
+class Role:
+    """User role definitions."""
+
+    ADMIN = "admin"
+    HR_MANAGER = "hr_manager"
+    EMPLOYEE = "employee"
+    USER = EMPLOYEE
+    MANAGER = HR_MANAGER
+
+    WRITE_ACCESS = {ADMIN, HR_MANAGER}
+
+    @classmethod
+    def normalize(cls, value: str | None) -> str:
+        if value is None:
+            return cls.EMPLOYEE
+
+        normalized = value.strip().lower().replace(" ", "_")
+        if normalized == "user":
+            return cls.EMPLOYEE
+        if normalized == "manager":
+            return cls.HR_MANAGER
+        if normalized == "hr":
+            return cls.HR_MANAGER
+        if normalized == "hr_manager":
+            return cls.HR_MANAGER
+        if normalized == cls.ADMIN:
+            return cls.ADMIN
+        return cls.EMPLOYEE
+
+    @classmethod
+    def label(cls, value: str | None) -> str:
+        normalized = cls.normalize(value)
+        if normalized == cls.ADMIN:
+            return "Admin"
+        if normalized == cls.HR_MANAGER:
+            return "HR Manager"
+        return "Employee"
+
+    @classmethod
+    def can_manage_data(cls, value: str | None) -> bool:
+        return cls.normalize(value) in cls.WRITE_ACCESS
+>>>>>>> 3bcda08 (Updated backend files)

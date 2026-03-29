@@ -15,8 +15,11 @@ import ResumeParser from '@/pages/ResumeParser';
 import Recommendations from '@/pages/Recommendations';
 import JDParser from '@/pages/JDParser';
 import Reports from '@/pages/Reports';
+<<<<<<< HEAD
 import Advisor from '@/pages/Advisor';
 import ModelPerformance from '@/pages/ModelPerformance';
+=======
+>>>>>>> 3bcda08 (Updated backend files)
 
 function App() {
   return (
@@ -55,8 +58,11 @@ function App() {
           <Route path="/recommendations" element={<Recommendations />} />
           <Route path="/jd-parser" element={<JDParser />} />
           <Route path="/reports" element={<Reports />} />
+<<<<<<< HEAD
           <Route path="/advisor" element={<Advisor />} />
           <Route path="/model-performance" element={<ModelPerformance />} />
+=======
+>>>>>>> 3bcda08 (Updated backend files)
         </Route>
       </Routes>
     </BrowserRouter>

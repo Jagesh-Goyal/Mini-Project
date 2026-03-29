@@ -1,182 +1,61 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { LogIn } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { login as loginApi } from '@/lib/api';
-
-interface FormErrors {
-  email?: string;
-  password?: string;
-  form?: string;
-}
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const getApiErrorMessage = (error: any, fallback: string) => {
-  if (error?.code === 'ECONNABORTED') {
-    return 'Request timed out. Please try again.';
-  }
-  if (!error?.response) {
-    return 'Cannot connect to backend API at http://127.0.0.1:8000. Please start backend server.';
-  }
-
-  const detail = error?.response?.data?.detail;
-  if (typeof detail === 'string' && detail.trim().length > 0) {
-    return detail;
-  }
-  if (Array.isArray(detail) && detail.length > 0) {
-    const firstError = detail[0];
-    if (typeof firstError?.msg === 'string' && firstError.msg.trim().length > 0) {
-      return firstError.msg;
-    }
-  }
-  if (typeof error?.response?.data?.message === 'string' && error.response.data.message.trim().length > 0) {
-    return error.response.data.message;
-  }
-  if (typeof error?.message === 'string' && error.message.trim().length > 0) {
-    return `${fallback} (${error.message})`;
-  }
-  return fallback;
-};
+import { authApi } from '@/api/authApi';
 
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [showDevCredentialsHint, setShowDevCredentialsHint] = useState(false);
+  const [show, setShow] = useState(false);
 
-  const validate = () => {
-    const nextErrors: FormErrors = {};
-
-    if (!EMAIL_REGEX.test(email.trim())) {
-      nextErrors.email = 'Please enter a valid email address';
-    }
-
-    if (password.length < 8) {
-      nextErrors.password = 'Password must be at least 8 characters';
-    }
-
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!validate()) {
+    if (!email.includes('@')) {
+      toast.error('Enter valid email');
       return;
     }
-
-    setLoading(true);
-    setErrors({});
-
+    if (password.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
     try {
-      const response = await loginApi({ email: email.trim().toLowerCase(), password });
-      setShowDevCredentialsHint(false);
-
-      localStorage.setItem('authToken', response.data.access_token);
-      localStorage.setItem('csrfToken', response.data.csrf_token);
-      localStorage.setItem('userEmail', response.data.email);
-      localStorage.setItem('userName', response.data.name);
-      localStorage.setItem('userRole', response.data.role);
-      toast.success('Login successful!');
+      await authApi.login({ email, password });
       navigate('/');
-    } catch (error: any) {
-      console.error('Login failed:', error);
-      const message = getApiErrorMessage(error, 'Invalid email or password');
-      setErrors({ form: message });
-      setShowDevCredentialsHint(error?.response?.status === 401);
-      toast.error(message);
-    } finally {
-      setLoading(false);
+    } catch {
+      toast.error('Login failed');
     }
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-blue-600/10 via-slate-950 to-cyan-500/10" />
-      <div className="relative w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg shadow-blue-500/25">
-            <span className="text-2xl font-bold text-white">D</span>
+    <div className='min-h-screen grid md:grid-cols-2 bg-slate-50'>
+      <section className='hidden md:flex bg-indigo-600 text-white p-10 items-center'>
+        <div>
+          <h1 className='text-4xl font-bold'>Dakshtra</h1>
+          <p className='mt-3 text-indigo-100'>AI-Based Workforce Planning and Skill Gap Intelligence.</p>
+        </div>
+      </section>
+      <section className='flex items-center justify-center p-6'>
+        <form onSubmit={submit} className='card p-6 w-full max-w-md space-y-4'>
+          <h2 className='text-2xl font-semibold'>Login</h2>
+          <div>
+            <label className='text-sm text-slate-600'>Email</label>
+            <input className='input mt-1' value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
-          <h1 className="text-2xl font-bold text-white">Dakshtra</h1>
-          <p className="mt-2 text-sm text-slate-400">AI Workforce Planning Platform</p>
-        </div>
-
-        <div className="glass-card-static p-6 sm:p-7">
-          <h2 className="mb-1 text-xl font-semibold text-white">Sign In</h2>
-          <p className="mb-6 text-sm text-slate-400">Continue to your workforce command center.</p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="form-input"
-              />
-              {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
+          <div>
+            <label className='text-sm text-slate-600'>Password</label>
+            <div className='mt-1 flex gap-2'>
+              <input className='input' type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <button type='button' className='px-3 rounded border border-slate-300' onClick={() => setShow((v) => !v)}>{show ? 'Hide' : 'Show'}</button>
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="form-input"
-              />
-              {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password}</p>}
-            </div>
-
-            {errors.form && (
-              <div className="rounded-lg border border-red-700 bg-red-900/20 px-3 py-2 text-sm text-red-300">
-                {errors.form}
-              </div>
-            )}
-
-            {showDevCredentialsHint && (
-              <div className="rounded-lg border border-blue-800 bg-blue-950/30 px-3 py-2 text-sm text-blue-200">
-                <p className="font-medium">Dev login credentials</p>
-                <p className="mt-1">Email: admin@dakshtra.com</p>
-                <p>Password: admin123</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full"
-            >
-              {loading ? (
-                <span>Signing in...</span>
-              ) : (
-                <>
-                  <LogIn size={18} />
-                  <span>Sign In</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          <p className="mt-6 text-center text-sm text-slate-400">
-            New here?{' '}
-            <Link to="/signup" className="font-medium text-blue-400 transition hover:text-blue-300">
-              Create an account
-            </Link>
-          </p>
-        </div>
-      </div>
+          </div>
+          <button className='btn-primary w-full' type='submit'>Sign In</button>
+          <div className='text-sm text-slate-600 flex justify-between'>
+            <Link to='/signup' className='text-indigo-600'>Create account</Link>
+            <button type='button' className='text-indigo-600'>Forgot password</button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }

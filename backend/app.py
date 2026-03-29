@@ -78,6 +78,7 @@ def ensure_workforce_schema_compatibility() -> None:
                 connection.execute(
                     text("ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'employee'")
                 )
+<<<<<<< HEAD
             if "is_active" not in user_columns:
                 connection.execute(
                     text("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
@@ -88,6 +89,10 @@ def ensure_workforce_schema_compatibility() -> None:
                 connection.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
             if "updated_at" not in user_columns:
                 connection.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
+=======
+            if "created_at" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
+>>>>>>> 3bcda08 (Updated backend files)
 
     db = SessionLocal()
     try:
@@ -121,6 +126,7 @@ def ensure_workforce_schema_compatibility() -> None:
 def ensure_default_system_users() -> None:
     db = SessionLocal()
     try:
+<<<<<<< HEAD
         default_admin_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@dakshtra.com")
         default_hr_email = os.getenv("DEFAULT_HR_EMAIL", "hr@dakshtra.com")
         default_employee_email = os.getenv("DEFAULT_EMPLOYEE_EMAIL", "employee@dakshtra.com")
@@ -144,6 +150,12 @@ def ensure_default_system_users() -> None:
                 os.getenv("DEFAULT_EMPLOYEE_PASSWORD") or "employee123",
                 Role.EMPLOYEE,
             ),
+=======
+        default_users = [
+            ("Admin", "admin@dakshtra.com", "admin123", Role.ADMIN),
+            ("HR Manager", "hr@dakshtra.com", "hrmanager123", Role.HR_MANAGER),
+            ("Employee", "employee@dakshtra.com", "employee123", Role.EMPLOYEE),
+>>>>>>> 3bcda08 (Updated backend files)
         ]
 
         for name, email, password, role in default_users:
@@ -157,6 +169,7 @@ def ensure_default_system_users() -> None:
                         role=role,
                     )
                 )
+<<<<<<< HEAD
             else:
                 existing_user.role = Role.normalize(existing_user.role)
 
@@ -172,6 +185,8 @@ def ensure_default_system_users() -> None:
                         "Repaired password for default system user %s. Configure DEFAULT_*_PASSWORD in environment for production.",
                         existing_user.email,
                     )
+=======
+>>>>>>> 3bcda08 (Updated backend files)
 
         db.commit()
     finally:
